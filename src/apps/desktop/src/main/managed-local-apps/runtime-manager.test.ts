@@ -18,6 +18,7 @@ describe('buildOpenDesignSpec', () => {
     expect(spec.processes.map((process) => process.id)).toEqual(['daemon', 'web'])
     expect(spec.processes[0]?.args).toContain('--no-open')
     expect(spec.processes[0]?.env.OD_DATA_DIR).toBe('/tmp/arkloop-open-design/data')
+    expect(spec.processes[1]?.args).not.toContain('--')
     expect(spec.processes[1]?.env.OD_DAEMON_URL).toBe('http://127.0.0.1:17456')
   })
 })

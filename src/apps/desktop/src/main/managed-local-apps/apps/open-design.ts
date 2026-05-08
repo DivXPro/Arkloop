@@ -43,7 +43,6 @@ export function buildOpenDesignSpec(input: {
           '--filter',
           '@open-design/web',
           'dev',
-          '--',
           '--hostname',
           '127.0.0.1',
           '--port',
