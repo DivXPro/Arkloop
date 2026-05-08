@@ -83,6 +83,17 @@ export type DesktopPreferencesConfig = {
   keepScreenAwake: boolean
 }
 
+export type OpenDesignIntegrationConfig = {
+  enabled: boolean
+  projectPath?: string
+  preferredDaemonPort?: number
+  preferredWebPort?: number
+}
+
+export type IntegrationsConfig = {
+  openDesign: OpenDesignIntegrationConfig
+}
+
 export type LocalConfig = {
   port: number
   portMode: LocalPortMode
@@ -106,6 +117,7 @@ export type AppConfig = {
   memory: MemoryConfig
   network: NetworkConfig
   desktop: DesktopPreferencesConfig
+  integrations: IntegrationsConfig
   voice?: VoiceConfig
 }
 
@@ -134,5 +146,12 @@ export const DEFAULT_CONFIG: AppConfig = {
     desktopNotifications: true,
     productUpdateNotifications: true,
     keepScreenAwake: false,
+  },
+  integrations: {
+    openDesign: {
+      enabled: false,
+      preferredDaemonPort: 17456,
+      preferredWebPort: 17573,
+    },
   },
 }

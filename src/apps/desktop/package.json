@@ -29,6 +29,7 @@
     "dist:linux:rpm": "pnpm build:web && pnpm build:electron && pnpm build:sidecar && electron-builder --linux rpm",
     "dist:win": "pnpm build:web && pnpm build:electron && node scripts/build-sidecar.mjs --platform win32 --arch x64 && electron-builder --win",
     "dist:all": "pnpm build:web && pnpm build:electron && pnpm build:sidecar:all && electron-builder -mwl",
+    "test": "vitest run -c vitest.config.ts",
     "type-check": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit"
   },
   "dependencies": {
@@ -40,6 +41,7 @@
     "@types/node": "^22.16.0",
     "electron": "^41.0.3",
     "electron-builder": "^26.0.12",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.2"
   }
 }
