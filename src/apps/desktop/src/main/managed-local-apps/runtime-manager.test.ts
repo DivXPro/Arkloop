@@ -152,14 +152,22 @@ describe('createManagedLocalAppRuntimeManager', () => {
   })
 
   it('keeps daemon as a health-only slot when web is the only spawned process', async () => {
-    const launchProcess = vi.fn(async (process: ManagedLocalAppSpec['processes'][number]) => ({
-      pid: process.id === 'web' ? 202 : 101,
-    }))
+    let webSpawned = false
+    const launchProcess = vi.fn(async (process: ManagedLocalAppSpec['processes'][number]) => {
+      if (process.id === 'web') {
+        webSpawned = true
+      }
+      return { pid: process.id === 'web' ? 202 : 101 }
+    })
     const manager = createManagedLocalAppRuntimeManager({
       launchProcess,
       waitForHealth: async (process) =>
         process.id === 'daemon'
-          ? { ok: true, url: 'http://127.0.0.1:17456' }
+          ? (
+              webSpawned
+                ? { ok: true, url: 'http://127.0.0.1:17456' }
+                : { ok: false, error: 'daemon should appear after web starts' }
+            )
           : { ok: true, url: 'http://127.0.0.1:17573' },
       stopProcess: async () => {},
     })
@@ -168,6 +176,8 @@ describe('createManagedLocalAppRuntimeManager', () => {
 
     expect(launchProcess).toHaveBeenCalledTimes(1)
     expect(launchProcess).toHaveBeenCalledWith(openDesignSpec.processes[1])
+    expect(webSpawned).toBe(true)
+    expect(status.status).toBe('running')
     expect(status.daemonUrl).toBe('http://127.0.0.1:17456')
     expect(status.webUrl).toBe('http://127.0.0.1:17573')
     expect(status.pids).toEqual({ web: 202 })

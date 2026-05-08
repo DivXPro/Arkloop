@@ -98,7 +98,20 @@ export function createManagedLocalAppRuntimeManager(deps: {
     records.set(spec.id, record)
     deps.onEvent?.({ appId: spec.id, stage: 'ensure-started' })
 
-    if (daemon.launchMode !== 'health-only') {
+    if (daemon.launchMode === 'health-only') {
+      deps.onEvent?.({ appId: spec.id, processId: web.id, stage: 'launch-started' })
+      const webLaunch = await deps.launchProcess(web)
+      record.state.pids.web = webLaunch.pid
+      deps.onEvent?.({
+        appId: spec.id,
+        processId: web.id,
+        stage: 'launch-completed',
+        pid: webLaunch.pid,
+      })
+      if (webLaunch.child) {
+        record.children.web = webLaunch.child
+      }
+    } else {
       deps.onEvent?.({ appId: spec.id, processId: daemon.id, stage: 'launch-started' })
       const daemonLaunch = await deps.launchProcess(daemon)
       record.state.pids.daemon = daemonLaunch.pid
@@ -138,17 +151,19 @@ export function createManagedLocalAppRuntimeManager(deps: {
       url: daemonHealth.url,
     })
 
-    deps.onEvent?.({ appId: spec.id, processId: web.id, stage: 'launch-started' })
-    const webLaunch = await deps.launchProcess(web)
-    record.state.pids.web = webLaunch.pid
-    deps.onEvent?.({
-      appId: spec.id,
-      processId: web.id,
-      stage: 'launch-completed',
-      pid: webLaunch.pid,
-    })
-    if (webLaunch.child) {
-      record.children.web = webLaunch.child
+    if (daemon.launchMode !== 'health-only') {
+      deps.onEvent?.({ appId: spec.id, processId: web.id, stage: 'launch-started' })
+      const webLaunch = await deps.launchProcess(web)
+      record.state.pids.web = webLaunch.pid
+      deps.onEvent?.({
+        appId: spec.id,
+        processId: web.id,
+        stage: 'launch-completed',
+        pid: webLaunch.pid,
+      })
+      if (webLaunch.child) {
+        record.children.web = webLaunch.child
+      }
     }
 
     const webHealth = await deps.waitForHealth(web)
