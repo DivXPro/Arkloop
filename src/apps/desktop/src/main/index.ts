@@ -29,8 +29,9 @@ import { syncLocalVersions } from './updater'
 import { ensureBrowserSearchServer, closeBrowserSearchServer } from './browser-search'
 import { createMainAreaBrowserHost } from './browser-main-area'
 import { initializeBrowserTabs, setBrowserTabsStateListener, closeAllBrowserTabs, listBrowserTabs } from './browser-tabs'
-import { getManagedLocalAppSpec } from './managed-local-apps/registry'
+import { resolveManagedLocalAppSpec } from './managed-local-apps/registry'
 import { createManagedLocalAppRuntimeManager } from './managed-local-apps/runtime-manager'
+import type { ManagedLocalAppEnsureRequest, ManagedLocalAppSpec } from './managed-local-apps/types'
 import type { AppConfig, ApplyConfigUpdateOptions } from './types'
 
 app.setName('Arkloop')
@@ -464,6 +465,9 @@ let powerSaveBlockerId: number | null = null
 let keepAwakeSessionActive = false
 
 const managedAppRuntimeManager = createManagedLocalAppRuntimeManager({
+  onEvent: (event) => {
+    console.info('[managed-app]', event)
+  },
   launchProcess: async (processSpec) => {
     const child = spawn(processSpec.command, processSpec.args, {
       cwd: processSpec.cwd,
@@ -484,7 +488,7 @@ const managedAppRuntimeManager = createManagedLocalAppRuntimeManager({
     if (!port) {
       return { ok: false, error: `missing preferred port for ${processSpec.id}` }
     }
-    const healthPath = processSpec.id === 'daemon' ? '/api/projects' : '/'
+    const healthPath = processSpec.healthPath ?? '/'
     const url = `http://127.0.0.1:${port}${healthPath}`
     const deadline = Date.now() + 15_000
 
@@ -518,6 +522,31 @@ const managedAppRuntimeManager = createManagedLocalAppRuntimeManager({
     }
   },
 })
+const managedAppSpecs = new Map<string, ManagedLocalAppSpec>()
+
+function failedManagedAppRuntime(appId: string, message: string) {
+  return {
+    appId,
+    status: 'failed' as const,
+    daemonUrl: null,
+    webUrl: null,
+    pids: {},
+    lastError: message,
+  }
+}
+
+function resolveManagedAppSpec(request: ManagedLocalAppEnsureRequest): ManagedLocalAppSpec | null {
+  const spec = resolveManagedLocalAppSpec({
+    homeDir: os.homedir(),
+    pluginId: request.pluginId,
+    launcher: request.launcher,
+    localConfig: request.localConfig,
+  })
+  if (spec) {
+    managedAppSpecs.set(spec.id, spec)
+  }
+  return spec
+}
 
 function applyDesktopPreferences(config: AppConfig): void {
   try {
@@ -584,32 +613,21 @@ if (!hasSingleInstanceLock) {
       getSidecarRuntime: async () => getSidecarRuntime(),
       setKeepAwakeSessionActive,
       managedApps: {
-        ensure: async (appId) => {
-          const spec = getManagedLocalAppSpec(loadConfig(), appId)
+        ensure: async (request) => {
+          const spec = resolveManagedAppSpec(request)
           if (!spec) {
-            return {
-              appId,
-              status: 'failed' as const,
-              daemonUrl: null,
-              webUrl: null,
-              pids: {},
-              lastError: `managed app ${appId} is not configured`,
-            }
+            return failedManagedAppRuntime(
+              request.pluginId,
+              `managed app ${request.pluginId} is not configured`,
+            )
           }
           return managedAppRuntimeManager.ensureApp(spec)
         },
         getStatus: async (appId) => managedAppRuntimeManager.getStatus(appId),
         restart: async (appId) => {
-          const spec = getManagedLocalAppSpec(loadConfig(), appId)
+          const spec = managedAppSpecs.get(appId)
           if (!spec) {
-            return {
-              appId,
-              status: 'failed' as const,
-              daemonUrl: null,
-              webUrl: null,
-              pids: {},
-              lastError: `managed app ${appId} is not configured`,
-            }
+            return failedManagedAppRuntime(appId, `managed app ${appId} is not configured`)
           }
           return managedAppRuntimeManager.getStatus(appId).status === 'stopped'
             ? managedAppRuntimeManager.ensureApp(spec)

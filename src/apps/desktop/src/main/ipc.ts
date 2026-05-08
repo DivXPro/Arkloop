@@ -20,7 +20,7 @@ import { DEFAULT_CONFIG } from './types'
 import { getDesktopLogDir, getDesktopLogPaths } from './logging'
 import { applyOnboardingImport, detectOnboardingImportSources, type OnboardingImportApplyRequest } from './onboarding-import'
 import type { AppConfig, ApplyConfigUpdateOptions, ConnectorsConfig, MemoryConfig } from './types'
-import type { ManagedLocalAppBounds, ManagedLocalAppId } from './managed-local-apps/types'
+import type { ManagedLocalAppBounds, ManagedLocalAppEnsureRequest, ManagedLocalAppId } from './managed-local-apps/types'
 import type { ManagedLocalAppRuntimeState } from './managed-local-apps/runtime-manager'
 import {
   listBrowserTabs,
@@ -41,7 +41,7 @@ type DesktopController = {
   getSidecarRuntime: () => Promise<SidecarRuntime>
   setKeepAwakeSessionActive: (active: boolean) => void
   managedApps: {
-    ensure: (appId: ManagedLocalAppId) => Promise<ManagedLocalAppRuntimeState>
+    ensure: (request: ManagedLocalAppEnsureRequest) => Promise<ManagedLocalAppRuntimeState>
     getStatus: (appId: ManagedLocalAppId) => Promise<ManagedLocalAppRuntimeState>
     restart: (appId: ManagedLocalAppId) => Promise<ManagedLocalAppRuntimeState>
     stop: (appId: ManagedLocalAppId) => Promise<ManagedLocalAppRuntimeState>
@@ -552,8 +552,8 @@ export function registerIpcHandlers(
     return syncBrowserTabViewBounds(tabId, bounds)
   })
 
-  ipcMain.handle('arkloop:managed-apps:ensure', (_event, appId: ManagedLocalAppId) => {
-    return controller.managedApps.ensure(appId)
+  ipcMain.handle('arkloop:managed-apps:ensure', (_event, request: ManagedLocalAppEnsureRequest) => {
+    return controller.managedApps.ensure(request)
   })
 
   ipcMain.handle('arkloop:managed-apps:status', (_event, appId: ManagedLocalAppId) => {

@@ -15,7 +15,6 @@ import type {
   MemoryConfig,
   MemoryProvider,
   NetworkConfig,
-  OpenDesignIntegrationConfig,
   NowledgeDesktopConfig,
   OpenVikingDesktopConfig,
   SearchConnectorConfig,
@@ -226,31 +225,6 @@ function normalizeDesktopPreferences(raw: unknown): DesktopPreferencesConfig {
   }
 }
 
-function normalizePreferredIntegrationPort(value: unknown, fallback: number): number {
-  if (typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 65535) {
-    return value
-  }
-  return fallback
-}
-
-function normalizeOpenDesignIntegration(raw: unknown): OpenDesignIntegrationConfig {
-  const r = (raw && typeof raw === 'object') ? raw as Partial<OpenDesignIntegrationConfig> : {}
-  return {
-    enabled: r.enabled === true,
-    ...(typeof r.projectPath === 'string' && r.projectPath.trim()
-      ? { projectPath: r.projectPath.trim() }
-      : {}),
-    preferredDaemonPort: normalizePreferredIntegrationPort(
-      r.preferredDaemonPort,
-      DEFAULT_CONFIG.integrations.openDesign.preferredDaemonPort ?? 17456,
-    ),
-    preferredWebPort: normalizePreferredIntegrationPort(
-      r.preferredWebPort,
-      DEFAULT_CONFIG.integrations.openDesign.preferredWebPort ?? 17573,
-    ),
-  }
-}
-
 export function normalizeConfig(config: Partial<AppConfig> | null | undefined): AppConfig {
   const parsed = config ?? {}
   return {
@@ -278,9 +252,6 @@ export function normalizeConfig(config: Partial<AppConfig> | null | undefined): 
     memory: normalizeMemory(parsed.memory),
     network: normalizeNetwork(parsed.network),
     desktop: normalizeDesktopPreferences(parsed.desktop),
-    integrations: {
-      openDesign: normalizeOpenDesignIntegration(parsed.integrations?.openDesign),
-    },
     voice: normalizeVoice(parsed.voice),
   }
 }

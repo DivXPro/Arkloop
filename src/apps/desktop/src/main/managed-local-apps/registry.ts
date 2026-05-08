@@ -1,31 +1,74 @@
-import * as path from 'path'
-import * as os from 'os'
+import path from 'node:path'
 
-import type { AppConfig } from '../types'
-import { buildOpenDesignSpec } from './apps/open-design'
-import type { ManagedLocalAppId, ManagedLocalAppSpec } from './types'
+import type { ManagedLocalAppEnsureRequest, ManagedLocalAppLauncherSpec, ManagedLocalAppSpec } from './types'
 
-export function getManagedLocalAppRuntimeRoot(
-  homeDir: string,
-  appId: ManagedLocalAppId,
-): string {
-  return path.join(homeDir, '.arkloop', 'integrations', appId)
+function resolveRuntimeRoot(homeDir: string, pluginId: string, launcher: ManagedLocalAppLauncherSpec): string {
+  const relativeRoot = launcher.runtimeRootTemplate.replaceAll('{pluginId}', pluginId)
+  return path.join(homeDir, ...relativeRoot.split('/').filter(Boolean))
 }
 
-export function getManagedLocalAppSpec(
-  config: AppConfig,
-  appId: ManagedLocalAppId,
-): ManagedLocalAppSpec | null {
-  if (appId !== 'open-design') return null
+function buildReplacementContext(input: {
+  pluginId: string
+  runtimeRoot: string
+  daemonPort: number
+  webPort: number
+}) {
+  return {
+    '{pluginId}': input.pluginId,
+    '{runtimeRoot}': input.runtimeRoot,
+    '{port:daemon}': String(input.daemonPort),
+    '{port:web}': String(input.webPort),
+  }
+}
 
-  const openDesign = config.integrations.openDesign
-  if (!openDesign.enabled || !openDesign.projectPath) return null
+function interpolateTemplate(value: string, replacements: Record<string, string>): string {
+  return Object.entries(replacements).reduce(
+    (result, [token, replacement]) => result.replaceAll(token, replacement),
+    value,
+  )
+}
 
-  const runtimeRoot = getManagedLocalAppRuntimeRoot(os.homedir(), appId)
-  return buildOpenDesignSpec({
-    projectPath: openDesign.projectPath,
+export function resolveManagedLocalAppSpec(input: {
+  homeDir: string
+  pluginId: ManagedLocalAppEnsureRequest['pluginId']
+  launcher: ManagedLocalAppEnsureRequest['launcher']
+  localConfig: ManagedLocalAppEnsureRequest['localConfig']
+}): ManagedLocalAppSpec | null {
+  const projectPath = input.localConfig[input.launcher.localConfigKey]
+  if (!projectPath) return null
+
+  const runtimeRoot = resolveRuntimeRoot(input.homeDir, input.pluginId, input.launcher)
+  const daemonPort = input.launcher.processes.find((process) => process.id === 'daemon')?.preferredPort ?? 17456
+  const webPort = input.launcher.processes.find((process) => process.id === 'web')?.preferredPort ?? 17573
+  const replacements = buildReplacementContext({
+    pluginId: input.pluginId,
     runtimeRoot,
-    preferredDaemonPort: openDesign.preferredDaemonPort ?? 17456,
-    preferredWebPort: openDesign.preferredWebPort ?? 17573,
+    daemonPort,
+    webPort,
   })
+  const healthPaths = new Map(
+    input.launcher.healthChecks.map((check) => [check.processId, check.path]),
+  )
+
+  return {
+    id: input.pluginId,
+    title: input.launcher.id,
+    presentation: 'page',
+    mountTarget: input.launcher.mountTarget,
+    runtimeRoot,
+    processes: input.launcher.processes.map((process) => ({
+      id: process.id,
+      command: process.command,
+      args: process.args.map((value) => interpolateTemplate(value, replacements)),
+      cwd: projectPath,
+      env: Object.fromEntries(
+        Object.entries(process.env).map(([key, value]) => [
+          key,
+          interpolateTemplate(value, replacements),
+        ]),
+      ),
+      preferredPort: process.preferredPort,
+      healthPath: healthPaths.get(process.id),
+    })),
+  }
 }

@@ -305,7 +305,37 @@ export type DesktopBrowserTabBounds = {
   height: number
 }
 
-export type ManagedDesktopAppId = 'open-design'
+export type ManagedDesktopAppId = string
+export type ManagedDesktopLauncherProcessId = 'daemon' | 'web'
+
+export type ManagedDesktopLauncherProcess = {
+  id: ManagedDesktopLauncherProcessId
+  command: string
+  args: string[]
+  cwd: 'projectPath'
+  env: Record<string, string>
+  preferredPort?: number
+}
+
+export type ManagedDesktopLauncherHealthCheck = {
+  processId: ManagedDesktopLauncherProcessId
+  path: string
+}
+
+export type ManagedDesktopLauncherSpec = {
+  id: string
+  localConfigKey: 'projectPath'
+  mountTarget: 'main-workspace'
+  runtimeRootTemplate: string
+  processes: ManagedDesktopLauncherProcess[]
+  healthChecks: ManagedDesktopLauncherHealthCheck[]
+}
+
+export type ManagedDesktopEnsureRequest = {
+  pluginId: string
+  launcher: ManagedDesktopLauncherSpec
+  localConfig: Record<string, string | undefined>
+}
 
 export type ManagedDesktopAppStatus =
   | 'stopped'
@@ -438,7 +468,7 @@ export type ArkloopDesktopApi = {
     onStateChanged: (callback: (state: { tabs: DesktopBrowserTab[] }) => void) => () => void
   }
   managedApps: {
-    ensure: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
+    ensure: (request: ManagedDesktopEnsureRequest) => Promise<ManagedDesktopAppRuntime>
     getStatus: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
     restart: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
     stop: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
@@ -674,7 +704,7 @@ const api: ArkloopDesktopApi = {
   },
 
   managedApps: {
-    ensure: (appId: ManagedDesktopAppId) => ipcRenderer.invoke('arkloop:managed-apps:ensure', appId),
+    ensure: (request: ManagedDesktopEnsureRequest) => ipcRenderer.invoke('arkloop:managed-apps:ensure', request),
     getStatus: (appId: ManagedDesktopAppId) => ipcRenderer.invoke('arkloop:managed-apps:status', appId),
     restart: (appId: ManagedDesktopAppId) => ipcRenderer.invoke('arkloop:managed-apps:restart', appId),
     stop: (appId: ManagedDesktopAppId) => ipcRenderer.invoke('arkloop:managed-apps:stop', appId),

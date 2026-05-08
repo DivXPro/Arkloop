@@ -3,6 +3,9 @@ import { useEffect, useState } from 'react'
 import { getDesktopApi } from '@arkloop/shared/desktop'
 
 import { DesktopMainAreaHost } from '../components/DesktopMainAreaHost'
+import { getBuiltinPluginById } from './registry'
+
+const OPEN_DESIGN_PROJECT_PATH = '/Users/huhui/Projects/open-design'
 
 export function OpenDesignPluginHost() {
   const [state, setState] = useState<'starting' | 'running' | 'failed'>('starting')
@@ -17,7 +20,21 @@ export function OpenDesignPluginHost() {
       return
     }
 
-    void api.managedApps.ensure('open-design').then((runtime) => {
+    const plugin = getBuiltinPluginById('open-design')
+    const launcher = plugin?.launcher
+    if (!launcher) {
+      setState('failed')
+      setError('Open Design launcher is missing')
+      return
+    }
+
+    void api.managedApps.ensure({
+      pluginId: 'open-design',
+      launcher,
+      localConfig: {
+        projectPath: OPEN_DESIGN_PROJECT_PATH,
+      },
+    }).then((runtime) => {
       if (cancelled) return
       if (runtime.status !== 'running' || !runtime.webUrl) {
         setState('failed')

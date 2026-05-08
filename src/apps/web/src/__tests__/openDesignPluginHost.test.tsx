@@ -65,7 +65,16 @@ describe('OpenDesignPluginHost', () => {
       await Promise.resolve()
     })
 
-    expect(ensure).toHaveBeenCalledWith('open-design')
+    expect(ensure).toHaveBeenCalledWith({
+      pluginId: 'open-design',
+      launcher: expect.objectContaining({
+        id: 'open-design',
+        localConfigKey: 'projectPath',
+      }),
+      localConfig: {
+        projectPath: '/Users/huhui/Projects/open-design',
+      },
+    })
     expect(container.querySelector('[data-testid="desktop-main-area-host"]')).not.toBeNull()
   })
 })

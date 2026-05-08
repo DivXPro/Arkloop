@@ -1,3 +1,5 @@
+import type { PluginLauncherSpec } from './plugin-launchers'
+
 export type ConnectionMode = 'local' | 'saas' | 'self-hosted'
 export type LocalPortMode = 'auto' | 'manual'
 export type DesktopPlatform = 'win32' | 'darwin' | 'linux' | string
@@ -212,7 +214,7 @@ export type DesktopBrowserTabBounds = {
   height: number
 }
 
-export type ManagedDesktopAppId = 'open-design'
+export type ManagedDesktopAppId = string
 
 export type ManagedDesktopAppStatus =
   | 'stopped'
@@ -235,6 +237,12 @@ export type ManagedDesktopAppBounds = {
   y: number
   width: number
   height: number
+}
+
+export type ManagedDesktopEnsureRequest = {
+  pluginId: string
+  launcher: PluginLauncherSpec
+  localConfig: Record<string, string | undefined>
 }
 
 export type ArkloopDesktopApi = {
@@ -345,7 +353,7 @@ export type ArkloopDesktopApi = {
     onStateChanged: (callback: (state: { tabs: DesktopBrowserTab[] }) => void) => () => void
   }
   managedApps?: {
-    ensure: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
+    ensure: (request: ManagedDesktopEnsureRequest) => Promise<ManagedDesktopAppRuntime>
     getStatus: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
     restart: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
     stop: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>

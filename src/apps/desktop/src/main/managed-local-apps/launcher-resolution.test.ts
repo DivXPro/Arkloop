@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest'
 
 import { resolveManagedLocalAppSpec } from './registry'
 
-describe('resolveManagedLocalAppSpec runtime root', () => {
-  it('uses the desktop config root under ~/.arkloop for launcher-backed runtime data', () => {
+describe('resolveManagedLocalAppSpec', () => {
+  it('resolves a launcher-backed spec using plugin local config', () => {
     const spec = resolveManagedLocalAppSpec({
       homeDir: '/Users/huhui',
       pluginId: 'open-design',
@@ -22,6 +22,7 @@ describe('resolveManagedLocalAppSpec runtime root', () => {
             cwd: 'projectPath',
             env: {
               OD_PORT: '{port:daemon}',
+              OD_DATA_DIR: '{runtimeRoot}/data',
             },
             preferredPort: 17456,
           },
@@ -33,8 +34,9 @@ describe('resolveManagedLocalAppSpec runtime root', () => {
       },
     })
 
-    expect(spec?.runtimeRoot).toBe(
-      path.join('/Users/huhui', '.arkloop', 'integrations', 'open-design'),
-    )
+    expect(spec?.runtimeRoot).toBe(path.join('/Users/huhui', '.arkloop', 'integrations', 'open-design'))
+    expect(spec?.processes[0]?.cwd).toBe('/Users/huhui/Projects/open-design')
+    expect(spec?.processes[0]?.args).toContain('17456')
+    expect(spec?.processes[0]?.env.OD_DATA_DIR).toBe('/Users/huhui/.arkloop/integrations/open-design/data')
   })
 })

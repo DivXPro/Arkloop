@@ -1,30 +1,71 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { buildOpenDesignSpec } from './apps/open-design'
 import { createManagedLocalAppRuntimeManager } from './runtime-manager'
+import type { ManagedLocalAppSpec } from './types'
 
-describe('buildOpenDesignSpec', () => {
-  it('builds daemon and web launch specs from config and runtime roots', () => {
-    const spec = buildOpenDesignSpec({
-      projectPath: '/Users/huhui/Projects/open-design',
-      runtimeRoot: '/tmp/arkloop-open-design',
-      preferredDaemonPort: 17456,
-      preferredWebPort: 17573,
-    })
+const openDesignSpec: ManagedLocalAppSpec = {
+  id: 'open-design',
+  title: 'Open Design',
+  presentation: 'page',
+  mountTarget: 'main-workspace',
+  runtimeRoot: '/tmp/arkloop-open-design',
+  processes: [
+    {
+      id: 'daemon',
+      command: 'node',
+      args: [
+        'apps/daemon/dist/cli.js',
+        '--port',
+        '17456',
+        '--host',
+        '127.0.0.1',
+        '--no-open',
+      ],
+      cwd: '/Users/huhui/Projects/open-design',
+      env: {
+        OD_PORT: '17456',
+        OD_DATA_DIR: '/tmp/arkloop-open-design/data',
+      },
+      preferredPort: 17456,
+    },
+    {
+      id: 'web',
+      command: 'pnpm',
+      args: [
+        '--filter',
+        '@open-design/web',
+        'dev',
+        '--hostname',
+        '127.0.0.1',
+        '--port',
+        '17573',
+      ],
+      cwd: '/Users/huhui/Projects/open-design',
+      env: {
+        OD_DAEMON_URL: 'http://127.0.0.1:17456',
+        PORT: '17573',
+      },
+      preferredPort: 17573,
+    },
+  ],
+}
 
-    expect(spec.id).toBe('open-design')
-    expect(spec.presentation).toBe('page')
-    expect(spec.mountTarget).toBe('main-workspace')
-    expect(spec.processes.map((process) => process.id)).toEqual(['daemon', 'web'])
-    expect(spec.processes[0]?.args).toContain('--no-open')
-    expect(spec.processes[0]?.env.OD_DATA_DIR).toBe('/tmp/arkloop-open-design/data')
-    expect(spec.processes[1]?.args).not.toContain('--')
-    expect(spec.processes[1]?.env.OD_DAEMON_URL).toBe('http://127.0.0.1:17456')
+describe('openDesignSpec fixture', () => {
+  it('represents a launcher-resolved daemon and web runtime', () => {
+    expect(openDesignSpec.id).toBe('open-design')
+    expect(openDesignSpec.presentation).toBe('page')
+    expect(openDesignSpec.mountTarget).toBe('main-workspace')
+    expect(openDesignSpec.processes.map((process) => process.id)).toEqual(['daemon', 'web'])
+    expect(openDesignSpec.processes[0]?.args).toContain('--no-open')
+    expect(openDesignSpec.processes[0]?.env.OD_DATA_DIR).toBe('/tmp/arkloop-open-design/data')
+    expect(openDesignSpec.processes[1]?.args).not.toContain('--')
+    expect(openDesignSpec.processes[1]?.env.OD_DAEMON_URL).toBe('http://127.0.0.1:17456')
   })
 })
 
 describe('createManagedLocalAppRuntimeManager', () => {
   it('marks the app running after daemon and web become healthy', async () => {
+    const onEvent = vi.fn()
     const manager = createManagedLocalAppRuntimeManager({
       launchProcess: async (process) => ({
         pid: process.id === 'daemon' ? 101 : 202,
@@ -34,21 +75,40 @@ describe('createManagedLocalAppRuntimeManager', () => {
           ? { ok: true, url: 'http://127.0.0.1:17456' }
           : { ok: true, url: 'http://127.0.0.1:17573' },
       stopProcess: async () => {},
+      onEvent,
     })
 
-    const status = await manager.ensureApp(
-      buildOpenDesignSpec({
-        projectPath: '/Users/huhui/Projects/open-design',
-        runtimeRoot: '/tmp/arkloop-open-design',
-        preferredDaemonPort: 17456,
-        preferredWebPort: 17573,
-      }),
-    )
+    const status = await manager.ensureApp(openDesignSpec)
 
     expect(status.status).toBe('running')
     expect(status.daemonUrl).toBe('http://127.0.0.1:17456')
     expect(status.webUrl).toBe('http://127.0.0.1:17573')
     expect(status.pids).toEqual({ daemon: 101, web: 202 })
+    expect(onEvent.mock.calls).toEqual([
+      [{ appId: 'open-design', stage: 'ensure-started' }],
+      [{ appId: 'open-design', processId: 'daemon', stage: 'launch-started' }],
+      [{ appId: 'open-design', processId: 'daemon', stage: 'launch-completed', pid: 101 }],
+      [{
+        appId: 'open-design',
+        processId: 'daemon',
+        stage: 'health-ok',
+        url: 'http://127.0.0.1:17456',
+      }],
+      [{ appId: 'open-design', processId: 'web', stage: 'launch-started' }],
+      [{ appId: 'open-design', processId: 'web', stage: 'launch-completed', pid: 202 }],
+      [{
+        appId: 'open-design',
+        processId: 'web',
+        stage: 'health-ok',
+        url: 'http://127.0.0.1:17573',
+      }],
+      [{
+        appId: 'open-design',
+        stage: 'ensure-running',
+        daemonUrl: 'http://127.0.0.1:17456',
+        webUrl: 'http://127.0.0.1:17573',
+      }],
+    ])
   })
 
   it('stops both processes when the managed app is stopped', async () => {
@@ -64,14 +124,7 @@ describe('createManagedLocalAppRuntimeManager', () => {
       stopProcess,
     })
 
-    await manager.ensureApp(
-      buildOpenDesignSpec({
-        projectPath: '/Users/huhui/Projects/open-design',
-        runtimeRoot: '/tmp/arkloop-open-design',
-        preferredDaemonPort: 17456,
-        preferredWebPort: 17573,
-      }),
-    )
+    await manager.ensureApp(openDesignSpec)
 
     const stopped = await manager.stopApp('open-design')
 
