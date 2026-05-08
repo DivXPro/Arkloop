@@ -20,6 +20,8 @@ import { DEFAULT_CONFIG } from './types'
 import { getDesktopLogDir, getDesktopLogPaths } from './logging'
 import { applyOnboardingImport, detectOnboardingImportSources, type OnboardingImportApplyRequest } from './onboarding-import'
 import type { AppConfig, ApplyConfigUpdateOptions, ConnectorsConfig, MemoryConfig } from './types'
+import type { ManagedLocalAppBounds, ManagedLocalAppId } from './managed-local-apps/types'
+import type { ManagedLocalAppRuntimeState } from './managed-local-apps/runtime-manager'
 import {
   listBrowserTabs,
   createBrowserTab,
@@ -38,6 +40,15 @@ type DesktopController = {
   restartLocalSidecar: () => Promise<SidecarRuntime>
   getSidecarRuntime: () => Promise<SidecarRuntime>
   setKeepAwakeSessionActive: (active: boolean) => void
+  managedApps: {
+    ensure: (appId: ManagedLocalAppId) => Promise<ManagedLocalAppRuntimeState>
+    getStatus: (appId: ManagedLocalAppId) => Promise<ManagedLocalAppRuntimeState>
+    restart: (appId: ManagedLocalAppId) => Promise<ManagedLocalAppRuntimeState>
+    stop: (appId: ManagedLocalAppId) => Promise<ManagedLocalAppRuntimeState>
+    mountMainArea: (appId: ManagedLocalAppId, bounds: ManagedLocalAppBounds) => Promise<void>
+    syncMainAreaBounds: (appId: ManagedLocalAppId, bounds: ManagedLocalAppBounds) => Promise<void>
+    unmountMainArea: (appId: ManagedLocalAppId) => Promise<void>
+  }
 }
 
 let desktopSessionAccessToken = ''
@@ -539,6 +550,37 @@ export function registerIpcHandlers(
     height: number
   }) => {
     return syncBrowserTabViewBounds(tabId, bounds)
+  })
+
+  ipcMain.handle('arkloop:managed-apps:ensure', (_event, appId: ManagedLocalAppId) => {
+    return controller.managedApps.ensure(appId)
+  })
+
+  ipcMain.handle('arkloop:managed-apps:status', (_event, appId: ManagedLocalAppId) => {
+    return controller.managedApps.getStatus(appId)
+  })
+
+  ipcMain.handle('arkloop:managed-apps:restart', (_event, appId: ManagedLocalAppId) => {
+    return controller.managedApps.restart(appId)
+  })
+
+  ipcMain.handle('arkloop:managed-apps:stop', (_event, appId: ManagedLocalAppId) => {
+    return controller.managedApps.stop(appId)
+  })
+
+  ipcMain.handle('arkloop:managed-apps:mount-main-area', async (_event, appId: ManagedLocalAppId, bounds: ManagedLocalAppBounds) => {
+    await controller.managedApps.mountMainArea(appId, bounds)
+    return { ok: true }
+  })
+
+  ipcMain.handle('arkloop:managed-apps:sync-main-area-bounds', async (_event, appId: ManagedLocalAppId, bounds: ManagedLocalAppBounds) => {
+    await controller.managedApps.syncMainAreaBounds(appId, bounds)
+    return { ok: true }
+  })
+
+  ipcMain.handle('arkloop:managed-apps:unmount-main-area', async (_event, appId: ManagedLocalAppId) => {
+    await controller.managedApps.unmountMainArea(appId)
+    return { ok: true }
   })
 
   ipcMain.handle('arkloop:dialog:open-folder', async (event) => {

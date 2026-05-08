@@ -1,5 +1,7 @@
 import { app, BrowserWindow, Menu, nativeImage, powerSaveBlocker, session, shell } from 'electron'
+import { spawn } from 'node:child_process'
 import * as fs from 'fs'
+import * as http from 'http'
 import * as os from 'os'
 import * as path from 'path'
 import { loadConfig, normalizeConfig, saveConfig } from './config'
@@ -26,6 +28,8 @@ import { setupMainProcessLogging, getDesktopLogDir } from './logging'
 import { syncLocalVersions } from './updater'
 import { ensureBrowserSearchServer, closeBrowserSearchServer } from './browser-search'
 import { initializeBrowserTabs, setBrowserTabsStateListener, closeAllBrowserTabs, listBrowserTabs } from './browser-tabs'
+import { getManagedLocalAppSpec } from './managed-local-apps/registry'
+import { createManagedLocalAppRuntimeManager } from './managed-local-apps/runtime-manager'
 import type { AppConfig, ApplyConfigUpdateOptions } from './types'
 
 app.setName('Arkloop')
@@ -456,6 +460,62 @@ let shutdownInProgress = false
 let powerSaveBlockerId: number | null = null
 let keepAwakeSessionActive = false
 
+const managedAppRuntimeManager = createManagedLocalAppRuntimeManager({
+  launchProcess: async (processSpec) => {
+    const child = spawn(processSpec.command, processSpec.args, {
+      cwd: processSpec.cwd,
+      env: {
+        ...process.env,
+        ...processSpec.env,
+      },
+      stdio: 'ignore',
+    })
+    const pid = child.pid
+    if (!pid) {
+      throw new Error(`failed to launch managed app process: ${processSpec.id}`)
+    }
+    return { pid, child }
+  },
+  waitForHealth: async (processSpec) => {
+    const port = processSpec.preferredPort
+    if (!port) {
+      return { ok: false, error: `missing preferred port for ${processSpec.id}` }
+    }
+    const healthPath = processSpec.id === 'daemon' ? '/api/projects' : '/'
+    const url = `http://127.0.0.1:${port}${healthPath}`
+    const deadline = Date.now() + 15_000
+
+    while (Date.now() < deadline) {
+      const healthy = await new Promise<boolean>((resolve) => {
+        const request = http.get(url, (response) => {
+          response.resume()
+          resolve((response.statusCode ?? 500) < 500)
+        })
+        request.on('error', () => resolve(false))
+        request.setTimeout(1_000, () => {
+          request.destroy()
+          resolve(false)
+        })
+      })
+
+      if (healthy) {
+        return { ok: true, url: `http://127.0.0.1:${port}` }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+
+    return { ok: false, error: `${processSpec.id} health check timed out` }
+  },
+  stopProcess: async (pid) => {
+    try {
+      process.kill(pid, 'SIGTERM')
+    } catch {
+      return
+    }
+  },
+})
+
 function applyDesktopPreferences(config: AppConfig): void {
   try {
     app.setLoginItemSettings({ openAtLogin: config.desktop.launchAtLogin })
@@ -520,6 +580,43 @@ if (!hasSingleInstanceLock) {
       restartLocalSidecar,
       getSidecarRuntime: async () => getSidecarRuntime(),
       setKeepAwakeSessionActive,
+      managedApps: {
+        ensure: async (appId) => {
+          const spec = getManagedLocalAppSpec(loadConfig(), appId)
+          if (!spec) {
+            return {
+              appId,
+              status: 'failed' as const,
+              daemonUrl: null,
+              webUrl: null,
+              pids: {},
+              lastError: `managed app ${appId} is not configured`,
+            }
+          }
+          return managedAppRuntimeManager.ensureApp(spec)
+        },
+        getStatus: async (appId) => managedAppRuntimeManager.getStatus(appId),
+        restart: async (appId) => {
+          const spec = getManagedLocalAppSpec(loadConfig(), appId)
+          if (!spec) {
+            return {
+              appId,
+              status: 'failed' as const,
+              daemonUrl: null,
+              webUrl: null,
+              pids: {},
+              lastError: `managed app ${appId} is not configured`,
+            }
+          }
+          return managedAppRuntimeManager.getStatus(appId).status === 'stopped'
+            ? managedAppRuntimeManager.ensureApp(spec)
+            : managedAppRuntimeManager.restartApp(appId)
+        },
+        stop: async (appId) => managedAppRuntimeManager.stopApp(appId),
+        mountMainArea: async () => {},
+        syncMainAreaBounds: async () => {},
+        unmountMainArea: async () => {},
+      },
     })
     try {
       await ensureBrowserSearchServer(getDesktopAccessToken())

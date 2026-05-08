@@ -305,6 +305,31 @@ export type DesktopBrowserTabBounds = {
   height: number
 }
 
+export type ManagedDesktopAppId = 'open-design'
+
+export type ManagedDesktopAppStatus =
+  | 'stopped'
+  | 'starting'
+  | 'running'
+  | 'degraded'
+  | 'failed'
+
+export type ManagedDesktopAppRuntime = {
+  appId: ManagedDesktopAppId
+  status: ManagedDesktopAppStatus
+  daemonUrl: string | null
+  webUrl: string | null
+  pids: { daemon?: number; web?: number }
+  lastError: string | null
+}
+
+export type ManagedDesktopAppBounds = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export type ArkloopDesktopApi = {
   isDesktop: true
   config: {
@@ -411,6 +436,15 @@ export type ArkloopDesktopApi = {
     hide: () => Promise<{ ok: boolean }>
     syncBounds: (tabId: string, bounds: DesktopBrowserTabBounds) => Promise<{ ok: boolean }>
     onStateChanged: (callback: (state: { tabs: DesktopBrowserTab[] }) => void) => () => void
+  }
+  managedApps: {
+    ensure: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
+    getStatus: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
+    restart: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
+    stop: (appId: ManagedDesktopAppId) => Promise<ManagedDesktopAppRuntime>
+    mountMainArea: (appId: ManagedDesktopAppId, bounds: ManagedDesktopAppBounds) => Promise<{ ok: boolean }>
+    syncMainAreaBounds: (appId: ManagedDesktopAppId, bounds: ManagedDesktopAppBounds) => Promise<{ ok: boolean }>
+    unmountMainArea: (appId: ManagedDesktopAppId) => Promise<{ ok: boolean }>
   }
 }
 
@@ -637,6 +671,19 @@ const api: ArkloopDesktopApi = {
       ipcRenderer.on('arkloop:browser-tabs:state', handler)
       return () => ipcRenderer.removeListener('arkloop:browser-tabs:state', handler)
     },
+  },
+
+  managedApps: {
+    ensure: (appId: ManagedDesktopAppId) => ipcRenderer.invoke('arkloop:managed-apps:ensure', appId),
+    getStatus: (appId: ManagedDesktopAppId) => ipcRenderer.invoke('arkloop:managed-apps:status', appId),
+    restart: (appId: ManagedDesktopAppId) => ipcRenderer.invoke('arkloop:managed-apps:restart', appId),
+    stop: (appId: ManagedDesktopAppId) => ipcRenderer.invoke('arkloop:managed-apps:stop', appId),
+    mountMainArea: (appId: ManagedDesktopAppId, bounds: ManagedDesktopAppBounds) =>
+      ipcRenderer.invoke('arkloop:managed-apps:mount-main-area', appId, bounds),
+    syncMainAreaBounds: (appId: ManagedDesktopAppId, bounds: ManagedDesktopAppBounds) =>
+      ipcRenderer.invoke('arkloop:managed-apps:sync-main-area-bounds', appId, bounds),
+    unmountMainArea: (appId: ManagedDesktopAppId) =>
+      ipcRenderer.invoke('arkloop:managed-apps:unmount-main-area', appId),
   },
 }
 
