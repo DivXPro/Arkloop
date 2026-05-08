@@ -211,7 +211,7 @@ export function AppLayout() {
     togglePrivateMode,
     getFilteredThreads,
   } = useThreadList()
-  const { sidebarCollapsed, sidebarHiddenByWidth, rightPanelOpen, toggleSidebar } = useSidebarUI()
+  const { sidebarCollapsed, sidebarHidden, sidebarHiddenByWidth, rightPanelOpen, toggleSidebar } = useSidebarUI()
   const { isSearchMode, searchOverlayOpen, exitSearchMode, closeSearchOverlay } = useSearchUI()
   const { appMode, availableAppModes, setAppMode } = useAppModeUI()
   const { openSettings, closeSettings } = useSettingsUI()
@@ -409,12 +409,13 @@ export function AppLayout() {
         <div className="theme-background-layer" aria-hidden="true" />
         {desktop && (
           <DesktopTitleBar
-            sidebarCollapsed={sidebarCollapsed}
+            sidebarHidden={sidebarHidden}
             onToggleSidebar={() => toggleSidebar('titlebar')}
             onNewThread={handleNewThread}
             appMode={activeAppMode}
             onSetAppMode={handleSetAppMode}
             availableModes={availableAppModes}
+            showSidebarControls={!settingsOpen}
             showIncognitoToggle={activeAppMode !== 'work'}
             isPrivateMode={titleBarIncognitoActive}
             onTogglePrivateMode={handleDesktopTitleBarIncognitoClick}
@@ -443,7 +444,7 @@ export function AppLayout() {
           {collapsedSidebarEnterVisible && (
             <CollapsedSidebarTransitionOverlay direction="enter" onDone={() => setCollapsedSidebarEnterVisible(false)} />
           )}
-          {!sidebarHiddenByWidth && (
+          {!sidebarHiddenByWidth && !sidebarHidden && (
             <div
               className="relative h-full shrink-0 overflow-hidden"
               style={{

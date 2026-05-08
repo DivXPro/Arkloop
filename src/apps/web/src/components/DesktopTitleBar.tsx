@@ -32,12 +32,13 @@ const MAC_TITLEBAR_LEFT_PADDING = 76
 const DESKTOP_ICON_RAIL_LEFT_PADDING = 8
 
 type Props = {
-  sidebarCollapsed: boolean
+  sidebarHidden: boolean
   onToggleSidebar: () => void
   onNewThread?: () => void
   appMode: AppMode
   onSetAppMode: (mode: AppMode) => void
   availableModes: AppMode[]
+  showSidebarControls?: boolean
   showIncognitoToggle?: boolean
   isPrivateMode?: boolean
   onTogglePrivateMode?: () => void
@@ -53,12 +54,13 @@ type Props = {
 }
 
 export function DesktopTitleBar({
-  sidebarCollapsed,
+  sidebarHidden,
   onToggleSidebar,
   onNewThread,
   appMode,
   onSetAppMode,
   availableModes,
+  showSidebarControls = true,
   showIncognitoToggle = true,
   isPrivateMode,
   onTogglePrivateMode,
@@ -185,58 +187,66 @@ export function DesktopTitleBar({
       } as React.CSSProperties}
     >
       {/* sidebar and history controls */}
-      <div
-        className={isWindows ? 'flex items-center gap-1.5' : 'flex items-center gap-1'}
-        style={{
-          position: 'absolute',
-          left: isMac ? MAC_TITLEBAR_LEFT_PADDING : DESKTOP_ICON_RAIL_LEFT_PADDING,
-          top: isWindows ? 0 : 6,
-          height: isWindows ? '100%' : undefined,
-          zIndex: 2,
-          WebkitAppRegion: 'no-drag',
-        } as React.CSSProperties}
-      >
-        <button
-          onClick={() => {
-            endPerfTrace(sidebarToggleTrace.current, {
-              phase: 'click',
-              collapsed: sidebarCollapsed,
-              appMode,
-            })
-            sidebarToggleTrace.current = null
-            onToggleSidebar()
-          }}
-          onPointerDown={() => {
-            sidebarToggleTrace.current = beginPerfTrace('desktop_titlebar_sidebar_interaction', {
-              phase: 'pointerdown',
-              collapsed: sidebarCollapsed,
-              appMode,
-            })
-          }}
-          onPointerLeave={() => {
-            sidebarToggleTrace.current = null
-          }}
-          className={btnCls}
+      {showSidebarControls ? (
+        <div
+          data-testid="desktop-titlebar-sidebar-controls"
+          className={isWindows ? 'flex items-center gap-1.5' : 'flex items-center gap-1'}
+          style={{
+            position: 'absolute',
+            left: isMac ? MAC_TITLEBAR_LEFT_PADDING : DESKTOP_ICON_RAIL_LEFT_PADDING,
+            top: isWindows ? 0 : 6,
+            height: isWindows ? '100%' : undefined,
+            zIndex: 2,
+            WebkitAppRegion: 'no-drag',
+          } as React.CSSProperties}
         >
-          {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-        </button>
-        <button onClick={() => window.history.back()} className={btnCls}>
-          <ChevronLeft size={17} />
-        </button>
-        <button onClick={() => window.history.forward()} className={btnCls}>
-          <ChevronRight size={17} />
-        </button>
-        {showTitleBarNewThread && onNewThread && (
           <button
-            onClick={onNewThread}
-            title={newThreadLabel}
-            aria-label={newThreadLabel}
+            type="button"
+            data-testid="desktop-titlebar-toggle-sidebar"
+            onClick={() => {
+              endPerfTrace(sidebarToggleTrace.current, {
+                phase: 'click',
+                collapsed: sidebarHidden,
+                appMode,
+              })
+              sidebarToggleTrace.current = null
+              onToggleSidebar()
+            }}
+            onPointerDown={() => {
+              sidebarToggleTrace.current = beginPerfTrace('desktop_titlebar_sidebar_interaction', {
+                phase: 'pointerdown',
+                collapsed: sidebarHidden,
+                appMode,
+              })
+            }}
+            onPointerLeave={() => {
+              sidebarToggleTrace.current = null
+            }}
             className={btnCls}
           >
-            <SquarePen size={17} />
+            {sidebarHidden ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
           </button>
-        )}
-      </div>
+          <button type="button" onClick={() => window.history.back()} className={btnCls}>
+            <ChevronLeft size={17} />
+          </button>
+          <button type="button" onClick={() => window.history.forward()} className={btnCls}>
+            <ChevronRight size={17} />
+          </button>
+          {showTitleBarNewThread && onNewThread && (
+            <button
+              type="button"
+              onClick={onNewThread}
+              title={newThreadLabel}
+              aria-label={newThreadLabel}
+              className={btnCls}
+            >
+              <SquarePen size={17} />
+            </button>
+          )}
+        </div>
+      ) : (
+        <div />
+      )}
 
       {/* centered mode switch */}
       <div
