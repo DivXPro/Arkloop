@@ -699,6 +699,7 @@ if (!hasSingleInstanceLock) {
       try {
         closeAllBrowserTabs()
         browserMainAreaHost.hide('open-design')
+        await managedAppRuntimeManager.stopAll()
         const cfg = loadConfig()
         if (cfg.mode === 'local') {
           await stopBridgeOpenvikingIfNeeded(cfg.memory)

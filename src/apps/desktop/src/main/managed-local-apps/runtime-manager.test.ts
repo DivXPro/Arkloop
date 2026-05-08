@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { buildOpenDesignSpec } from './apps/open-design'
 import { createManagedLocalAppRuntimeManager } from './runtime-manager'
@@ -48,5 +48,35 @@ describe('createManagedLocalAppRuntimeManager', () => {
     expect(status.daemonUrl).toBe('http://127.0.0.1:17456')
     expect(status.webUrl).toBe('http://127.0.0.1:17573')
     expect(status.pids).toEqual({ daemon: 101, web: 202 })
+  })
+
+  it('stops both processes when the managed app is stopped', async () => {
+    const stopProcess = vi.fn(async () => {})
+    const manager = createManagedLocalAppRuntimeManager({
+      launchProcess: async (process) => ({
+        pid: process.id === 'daemon' ? 101 : 202,
+      }),
+      waitForHealth: async (process) =>
+        process.id === 'daemon'
+          ? { ok: true, url: 'http://127.0.0.1:17456' }
+          : { ok: true, url: 'http://127.0.0.1:17573' },
+      stopProcess,
+    })
+
+    await manager.ensureApp(
+      buildOpenDesignSpec({
+        projectPath: '/Users/huhui/Projects/open-design',
+        runtimeRoot: '/tmp/arkloop-open-design',
+        preferredDaemonPort: 17456,
+        preferredWebPort: 17573,
+      }),
+    )
+
+    const stopped = await manager.stopApp('open-design')
+
+    expect(stopProcess).toHaveBeenCalledTimes(2)
+    expect(stopProcess).toHaveBeenNthCalledWith(1, 202)
+    expect(stopProcess).toHaveBeenNthCalledWith(2, 101)
+    expect(stopped.status).toBe('stopped')
   })
 })
