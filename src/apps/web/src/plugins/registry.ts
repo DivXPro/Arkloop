@@ -2,7 +2,58 @@ import {
   SampleHybridPluginPage,
   SamplePagePluginPage,
 } from './builtin/SamplePluginPage'
+import type { PluginLauncherSpec } from '@arkloop/shared/plugin-launchers'
 import type { PluginDefinition } from './types'
+
+const openDesignLauncher: PluginLauncherSpec = {
+  id: 'open-design',
+  localConfigKey: 'projectPath',
+  mountTarget: 'main-workspace',
+  runtimeRootTemplate: '.arkloop/integrations/{pluginId}',
+  processes: [
+    {
+      id: 'daemon',
+      command: 'node',
+      args: [
+        'apps/daemon/dist/cli.js',
+        '--port',
+        '{port:daemon}',
+        '--host',
+        '127.0.0.1',
+        '--no-open',
+      ],
+      cwd: 'projectPath',
+      env: {
+        OD_PORT: '{port:daemon}',
+        OD_DATA_DIR: '{runtimeRoot}/data',
+      },
+      preferredPort: 17456,
+    },
+    {
+      id: 'web',
+      command: 'pnpm',
+      args: [
+        '--filter',
+        '@open-design/web',
+        'dev',
+        '--hostname',
+        '127.0.0.1',
+        '--port',
+        '{port:web}',
+      ],
+      cwd: 'projectPath',
+      env: {
+        OD_DAEMON_URL: 'http://127.0.0.1:{port:daemon}',
+        PORT: '{port:web}',
+      },
+      preferredPort: 17573,
+    },
+  ],
+  healthChecks: [
+    { processId: 'daemon', path: '/api/projects' },
+    { processId: 'web', path: '/' },
+  ],
+}
 
 export const builtinPlugins: PluginDefinition[] = [
   {
@@ -72,6 +123,7 @@ export const builtinPlugins: PluginDefinition[] = [
         mountTarget: 'main-workspace',
       },
     },
+    launcher: openDesignLauncher,
   },
 ]
 

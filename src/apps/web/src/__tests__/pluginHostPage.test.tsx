@@ -7,6 +7,7 @@ import { LocaleProvider } from '../contexts/LocaleContext'
 import { BrowserTabsProvider } from '../contexts/browser-tabs'
 import { PluginBrowserSessionProvider } from '../plugins/browser-session'
 import { PluginHostPage } from '../plugins/PluginHostPage'
+import { getBuiltinPluginById } from '../plugins/registry'
 import { PluginRuntimeProvider } from '../plugins/runtime'
 
 const desktopMock = vi.hoisted(() => {
@@ -106,6 +107,14 @@ describe('PluginHostPage', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+  })
+
+  it('declares the open-design launcher next to the plugin definition', () => {
+    const plugin = getBuiltinPluginById('open-design')
+
+    expect(plugin?.surfaces.managedApp?.managedAppId).toBe('open-design')
+    expect(plugin?.launcher?.localConfigKey).toBe('projectPath')
+    expect(plugin?.launcher?.processes.map((process) => process.id)).toEqual(['daemon', 'web'])
   })
 
   afterEach(() => {

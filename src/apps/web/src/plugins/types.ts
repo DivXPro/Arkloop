@@ -1,3 +1,5 @@
+import type { PluginLauncherSpec } from '@arkloop/shared/plugin-launchers'
+
 export type PluginShellMode = 'plugin-main' | 'plugin-workspace'
 
 export type PluginPresentation =
@@ -43,4 +45,5 @@ export type PluginDefinition = {
     resolveBrowserUrl?: (context: PluginResolveBrowserUrlContext) => Promise<string> | string
     browserPlacement?: 'main' | 'sidecar'
   }
+  launcher?: PluginLauncherSpec
 }
