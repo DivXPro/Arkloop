@@ -32,6 +32,9 @@ function Probe() {
       <button type="button" onClick={() => void openPlugin('sample-browser-plugin')}>
         open-browser
       </button>
+      <button type="button" onClick={() => void openPlugin('open-design')}>
+        open-open-design
+      </button>
       <button type="button" onClick={() => navigate('/t/thread-2')}>
         go-thread
       </button>
@@ -148,12 +151,45 @@ describe('PluginRuntimeProvider', () => {
 
     await act(async () => {
       container
-        .querySelectorAll('button')[2]
+        .querySelectorAll('button')[3]
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
     expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/t/thread-2')
     expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('none')
+  })
+
+  it('keeps a managed page plugin active while staying on workspace routes', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/t/thread-1']}>
+          <PluginRuntimeProvider>
+            <Probe />
+          </PluginRuntimeProvider>
+        </MemoryRouter>,
+      )
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      container
+        .querySelectorAll('button')[2]
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('open-design')
+    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/t/thread-1')
+
+    await act(async () => {
+      container
+        .querySelectorAll('button')[3]
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/t/thread-2')
+    expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('open-design')
   })
 })

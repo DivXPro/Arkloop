@@ -12,6 +12,7 @@ const PRESENTATION_LABELS: Record<PluginPresentation, string> = {
   route: 'Page',
   'embedded-browser': 'Browser',
   hybrid: 'Hybrid',
+  'page-external': 'Page',
 }
 
 function normalizePluginBrowserTarget(rawUrl: string): string | null {

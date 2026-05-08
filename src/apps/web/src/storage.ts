@@ -68,7 +68,11 @@ export const SEARCH_PERSONA_KEY = 'extended-search'
 export const WORK_PERSONA_KEY = 'work'
 
 export type AppMode = 'chat' | 'work'
-export type StoredPluginPresentation = 'route' | 'embedded-browser' | 'hybrid'
+export type StoredPluginPresentation =
+  | 'route'
+  | 'embedded-browser'
+  | 'hybrid'
+  | 'page-external'
 
 export type PluginRuntimeStorageState = {
   lastPluginId: string | null

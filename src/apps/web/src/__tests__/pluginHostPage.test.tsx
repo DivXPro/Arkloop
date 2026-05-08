@@ -68,7 +68,22 @@ const desktopMock = vi.hoisted(() => {
 
   return {
     isDesktop: vi.fn(() => true),
-    getDesktopApi: vi.fn(() => ({ browserTabs: browserTabsApi })),
+    getDesktopApi: vi.fn(() => ({
+      browserTabs: browserTabsApi,
+      managedApps: {
+        ensure: vi.fn(async () => ({
+          appId: 'open-design',
+          status: 'running',
+          daemonUrl: 'http://127.0.0.1:17456',
+          webUrl: 'http://127.0.0.1:17573',
+          pids: { daemon: 101, web: 202 },
+          lastError: null,
+        })),
+        mountMainArea: vi.fn(async () => ({ ok: true })),
+        syncMainAreaBounds: vi.fn(async () => ({ ok: true })),
+        unmountMainArea: vi.fn(async () => ({ ok: true })),
+      },
+    })),
     browserTabsApi,
   }
 })
@@ -178,5 +193,30 @@ describe('PluginHostPage', () => {
     expect(container.querySelector('[data-testid="sample-hybrid-plugin-page"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="browser-tab-page"]')).not.toBeNull()
     expect(container.querySelector('[data-testid^="plugin-presentation-button-"]')).toBeNull()
+  })
+
+  it('renders the managed page plugin host for open design', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/plugins/open-design']}>
+          <LocaleProvider>
+            <BrowserTabsProvider>
+              <PluginRuntimeProvider>
+                <PluginBrowserSessionProvider>
+                  <Routes>
+                    <Route path="/plugins/:pluginId" element={<PluginHostPage />} />
+                  </Routes>
+                </PluginBrowserSessionProvider>
+              </PluginRuntimeProvider>
+            </BrowserTabsProvider>
+          </LocaleProvider>
+        </MemoryRouter>,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="desktop-main-area-host"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="browser-tab-page"]')).toBeNull()
   })
 })

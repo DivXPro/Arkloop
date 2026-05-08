@@ -1,6 +1,10 @@
 export type PluginShellMode = 'plugin-main' | 'plugin-workspace'
 
-export type PluginPresentation = 'route' | 'embedded-browser' | 'hybrid'
+export type PluginPresentation =
+  | 'route'
+  | 'embedded-browser'
+  | 'hybrid'
+  | 'page-external'
 
 export type PluginBrowserLocation = {
   pathname: string
@@ -32,6 +36,10 @@ export type PluginDefinition = {
   }
   surfaces: {
     mount?: React.ComponentType
+    managedApp?: {
+      managedAppId: 'open-design'
+      mountTarget: 'main-workspace'
+    }
     resolveBrowserUrl?: (context: PluginResolveBrowserUrlContext) => Promise<string> | string
     browserPlacement?: 'main' | 'sidecar'
   }

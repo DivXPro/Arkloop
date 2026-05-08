@@ -56,6 +56,23 @@ export const builtinPlugins: PluginDefinition[] = [
       browserPlacement: 'sidecar',
     },
   },
+  {
+    id: 'open-design',
+    title: 'Open Design',
+    desktopOnly: true,
+    nav: { section: 'workspace', order: 130 },
+    shell: { mode: 'plugin-main' },
+    presentation: {
+      default: 'page-external',
+      supported: ['page-external'],
+    },
+    surfaces: {
+      managedApp: {
+        managedAppId: 'open-design',
+        mountTarget: 'main-workspace',
+      },
+    },
+  },
 ]
 
 export function listBuiltinPlugins(): PluginDefinition[] {

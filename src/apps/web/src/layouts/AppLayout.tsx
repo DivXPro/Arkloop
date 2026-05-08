@@ -32,6 +32,7 @@ import {
 import { useCredits } from "../contexts/credits";
 import { useBrowserTabs } from "../contexts/browser-tabs";
 import { usePluginBrowserSession } from "../plugins/browser-session";
+import { OpenDesignPluginHost } from "../plugins/OpenDesignPluginHost";
 import { usePluginRuntime } from "../plugins/runtime";
 import { isPerfDebugEnabled, recordPerfValue } from "../perfDebug";
 
@@ -105,6 +106,7 @@ type LayoutMainProps = {
   browserFullscreen: boolean;
   onToggleBrowserFullscreen: () => void;
   currentThread?: import("../api").ThreadResponse | null;
+  managedPagePluginId?: string | null;
 };
 
 const LayoutMain = memo(function LayoutMain({
@@ -124,6 +126,7 @@ const LayoutMain = memo(function LayoutMain({
   browserFullscreen,
   onToggleBrowserFullscreen,
   currentThread,
+  managedPagePluginId,
 }: LayoutMainProps) {
   const { me, accessToken, logout } = useAuth();
   const { setCreditsBalance } = useCredits();
@@ -206,7 +209,11 @@ const LayoutMain = memo(function LayoutMain({
         style={{ borderLeft: "0.5px solid var(--c-border-subtle)" }}
       >
         <div className="flex min-w-0 flex-1 overflow-hidden">
-          {!browserFullscreen && (
+          {managedPagePluginId === "open-design" ? (
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <OpenDesignPluginHost />
+            </div>
+          ) : !browserFullscreen && (
             <div
               className="flex min-w-0 flex-col overflow-hidden"
               style={{
@@ -332,6 +339,11 @@ export function AppLayout() {
     activePlugin !== null &&
     (activePluginPresentation === "embedded-browser" ||
       activePluginPresentation === "hybrid");
+  const pluginUsesManagedMainArea =
+    desktop &&
+    activePlugin !== null &&
+    activePluginPresentation === "page-external" &&
+    activePlugin.surfaces.managedApp?.mountTarget === "main-workspace";
   const pluginForcesBrowserFullscreen =
     activePluginPresentation === "embedded-browser";
   const effectiveBrowserPanelOpen = pluginUsesBrowserPanel
@@ -370,7 +382,10 @@ export function AppLayout() {
 
   useEffect(() => {
     if (!desktop || !activePlugin || !activePluginPresentation) return;
-    if (activePluginPresentation === "route") {
+    if (
+      activePluginPresentation === "route" ||
+      activePluginPresentation === "page-external"
+    ) {
       closeBrowserPanel();
       setBrowserFullscreen(false);
       return;
@@ -653,6 +668,9 @@ export function AppLayout() {
                 browserFullscreen={effectiveBrowserFullscreen}
                 onToggleBrowserFullscreen={handleToggleBrowserFullscreen}
                 currentThread={currentThread}
+                  managedPagePluginId={
+                    pluginUsesManagedMainArea ? activePlugin?.id ?? null : null
+                  }
               />
             </>
           )}

@@ -69,6 +69,9 @@ export function PluginRuntimeProvider({ children }: { children: ReactNode }) {
       setActivePluginContextPath(null)
       return
     }
+    if (activePresentation === 'page-external') {
+      return
+    }
     setActivePluginId(null)
     setActivePluginContextPath(null)
   }, [
@@ -100,6 +103,10 @@ export function PluginRuntimeProvider({ children }: { children: ReactNode }) {
     async (pluginId: string, presentation?: PluginPresentation) => {
       const plugin = getBuiltinPluginById(pluginId)
       if (!plugin) return
+      const currentPath = `${location.pathname}${location.search}${location.hash}` || '/'
+      const workspacePath = location.pathname.startsWith('/plugins/')
+        ? (lastWorkspacePathRef.current || '/')
+        : currentPath
       const nextPresentation =
         presentation ?? presentationByPluginId[pluginId] ?? plugin.presentation.default
       const nextPresentationMap = {
@@ -110,7 +117,7 @@ export function PluginRuntimeProvider({ children }: { children: ReactNode }) {
       setActivePluginContextPath(
         nextPresentation === 'route'
           ? `/plugins/${encodeURIComponent(pluginId)}`
-          : (lastWorkspacePathRef.current || '/'),
+          : workspacePath,
       )
       setPresentationByPluginId(nextPresentationMap)
       writePluginRuntimeState({
@@ -121,9 +128,9 @@ export function PluginRuntimeProvider({ children }: { children: ReactNode }) {
         navigate(`/plugins/${encodeURIComponent(pluginId)}`)
         return
       }
-      navigate(lastWorkspacePathRef.current || '/')
+      navigate(workspacePath)
     },
-    [navigate, presentationByPluginId],
+    [location.hash, location.pathname, location.search, navigate, presentationByPluginId],
   )
 
   const value = useMemo<PluginRuntimeContextValue>(

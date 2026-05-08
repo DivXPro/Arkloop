@@ -1,6 +1,7 @@
 import { Navigate, useParams } from 'react-router-dom'
 
 import { getBuiltinPluginById } from './registry'
+import { OpenDesignPluginHost } from './OpenDesignPluginHost'
 import { usePluginRuntime } from './runtime'
 import { PluginWorkspaceShell } from './PluginWorkspaceShell'
 
@@ -22,6 +23,13 @@ export function PluginHostPage() {
   if (presentation === 'route' && plugin.surfaces.mount) {
     const Component = plugin.surfaces.mount
     return <Component />
+  }
+
+  if (
+    presentation === 'page-external' &&
+    plugin.surfaces.managedApp?.managedAppId === 'open-design'
+  ) {
+    return <OpenDesignPluginHost />
   }
 
   if (presentation === 'embedded-browser' || presentation === 'hybrid') {
