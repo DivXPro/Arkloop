@@ -98,17 +98,19 @@ export function createManagedLocalAppRuntimeManager(deps: {
     records.set(spec.id, record)
     deps.onEvent?.({ appId: spec.id, stage: 'ensure-started' })
 
-    deps.onEvent?.({ appId: spec.id, processId: daemon.id, stage: 'launch-started' })
-    const daemonLaunch = await deps.launchProcess(daemon)
-    record.state.pids.daemon = daemonLaunch.pid
-    deps.onEvent?.({
-      appId: spec.id,
-      processId: daemon.id,
-      stage: 'launch-completed',
-      pid: daemonLaunch.pid,
-    })
-    if (daemonLaunch.child) {
-      record.children.daemon = daemonLaunch.child
+    if (daemon.launchMode !== 'health-only') {
+      deps.onEvent?.({ appId: spec.id, processId: daemon.id, stage: 'launch-started' })
+      const daemonLaunch = await deps.launchProcess(daemon)
+      record.state.pids.daemon = daemonLaunch.pid
+      deps.onEvent?.({
+        appId: spec.id,
+        processId: daemon.id,
+        stage: 'launch-completed',
+        pid: daemonLaunch.pid,
+      })
+      if (daemonLaunch.child) {
+        record.children.daemon = daemonLaunch.child
+      }
     }
 
     const daemonHealth = await deps.waitForHealth(daemon)

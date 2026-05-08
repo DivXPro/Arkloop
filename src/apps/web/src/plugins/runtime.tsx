@@ -69,9 +69,6 @@ export function PluginRuntimeProvider({ children }: { children: ReactNode }) {
       setActivePluginContextPath(null)
       return
     }
-    if (activePresentation === 'page-external') {
-      return
-    }
     setActivePluginId(null)
     setActivePluginContextPath(null)
   }, [

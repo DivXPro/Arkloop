@@ -7,6 +7,7 @@ export type PluginLauncherProcess = {
   cwd: 'projectPath'
   env: Record<string, string>
   preferredPort?: number
+  launchMode?: 'spawn' | 'health-only'
 }
 
 export type PluginLauncherHealthCheck = {

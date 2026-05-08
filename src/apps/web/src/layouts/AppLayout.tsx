@@ -564,7 +564,10 @@ export function AppLayout() {
 
   const handleBeforeNavigateToThread = useCallback(() => {
     closeSettings();
-  }, [closeSettings]);
+    deactivateActivePlugin();
+    setBrowserFullscreen(false);
+    closeBrowserPanel();
+  }, [closeBrowserPanel, closeSettings, deactivateActivePlugin]);
 
   if (!meLoaded) return <LoadingPage label={t.loading} />;
 

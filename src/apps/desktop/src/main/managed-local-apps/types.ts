@@ -18,6 +18,7 @@ export type ManagedLocalAppLauncherProcess = {
   cwd: 'projectPath'
   env: Record<string, string>
   preferredPort?: number
+  launchMode?: 'spawn' | 'health-only'
 }
 
 export type ManagedLocalAppLauncherHealthCheck = {
@@ -55,6 +56,7 @@ export type ManagedLocalAppProcessSpec = {
   env: Record<string, string>
   preferredPort?: number
   healthPath?: string
+  launchMode?: 'spawn' | 'health-only'
 }
 
 export type ManagedLocalAppSpec = {

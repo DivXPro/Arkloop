@@ -82,6 +82,7 @@ import {
   writeWorkFolder,
 } from "../storage";
 import { PluginSidebarSection } from "../plugins/PluginSidebarSection";
+import { usePluginRuntime } from "../plugins/runtime";
 
 type Props = {
   threads: ThreadResponse[];
@@ -264,6 +265,7 @@ const SidebarThreadItem = memo(function SidebarThreadItem({
         />
       ) : (
         <button
+          aria-current={isActive ? "page" : undefined}
           onClick={() => {
             markCompletionRead(thread.id);
             beforeNavigateToThread?.();
@@ -343,6 +345,7 @@ export function Sidebar({
   beforeNavigateToThread,
 }: Props) {
   const { me, accessToken } = useAuth();
+  const { activePluginPresentation } = usePluginRuntime();
   const {
     runningThreadIds,
     completedUnreadThreadIds,
@@ -369,7 +372,11 @@ export function Sidebar({
   const navigate = useNavigate();
   const location = useLocation();
   const { threadId } = useParams<{ threadId: string }>();
-  const activeThreadId = suppressActiveThreadHighlight ? undefined : threadId;
+  const pagePluginActive =
+    activePluginPresentation === "route" ||
+    activePluginPresentation === "page-external";
+  const activeThreadId =
+    suppressActiveThreadHighlight || pagePluginActive ? undefined : threadId;
   const { t } = useLocale();
 
   const [starredIds, setStarredIds] = useState<string[]>([]);

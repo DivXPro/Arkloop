@@ -69,6 +69,7 @@ export function resolveManagedLocalAppSpec(input: {
       ),
       preferredPort: process.preferredPort,
       healthPath: healthPaths.get(process.id),
+      launchMode: process.launchMode,
     })),
   }
 }

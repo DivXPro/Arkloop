@@ -4,6 +4,27 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '@arkloop/shared'
 
+vi.mock('../components/Sidebar', () => ({
+  Sidebar: ({
+    beforeNavigateToThread,
+  }: {
+    beforeNavigateToThread?: () => void
+  }) => {
+    const navigate = useNavigate()
+    return (
+      <button
+        data-testid="same-thread-entry"
+        onClick={() => {
+          beforeNavigateToThread?.()
+          navigate('/t/thread-1')
+        }}
+      >
+        thread-1
+      </button>
+    )
+  },
+}))
+
 import { AppLayout } from '../layouts/AppLayout'
 import { LocaleProvider } from '../contexts/LocaleContext'
 import { AuthProvider } from '../contexts/auth'
@@ -20,7 +41,6 @@ import {
   streamThreadRunStateEvents,
   type MeCreditsResponse,
   type MeResponse,
-  type ThreadResponse,
 } from '../api'
 
 const desktopMock = vi.hoisted(() => ({
@@ -106,30 +126,7 @@ function LocationProbe() {
   return <div data-testid="path">{location.pathname}</div>
 }
 
-function PluginThenNavigate({ to }: { to: string }) {
-  const { openPlugin } = usePluginRuntime()
-  const openedRef = useRef(false)
-  const switchedRef = useRef(false)
-  const location = useLocation()
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    if (openedRef.current) return
-    openedRef.current = true
-    void openPlugin('open-design')
-  }, [openPlugin])
-
-  useEffect(() => {
-    if (switchedRef.current) return
-    if (location.pathname !== '/t/thread-1') return
-    switchedRef.current = true
-    navigate(to)
-  }, [location.pathname, navigate, to])
-
-  return <div data-testid="route-switch-target">{to}</div>
-}
-
-describe('AppLayout managed page takeover', () => {
+describe('AppLayout same-thread exit from managed page', () => {
   let container: HTMLDivElement
   let root: ReturnType<typeof createRoot>
   const mockedGetMe = vi.mocked(getMe)
@@ -176,7 +173,7 @@ describe('AppLayout managed page takeover', () => {
     }
   })
 
-  it('replaces the normal workspace with the managed main-area host', async () => {
+  it('exits the managed page even when the thread route stays the same', async () => {
     await act(async () => {
       root.render(
         <LocaleProvider>
@@ -207,113 +204,23 @@ describe('AppLayout managed page takeover', () => {
           </ToastProvider>
         </LocaleProvider>,
       )
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="desktop-main-area-host"]')).not.toBeNull()
+
+    await act(async () => {
+      container
+        .querySelector('[data-testid="same-thread-entry"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
       await Promise.resolve()
     })
 
     expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/t/thread-1')
-    expect(container.querySelector('[data-testid="workspace-host"]')).toBeNull()
-    expect(container.querySelector('[data-testid="chat-view"]')).toBeNull()
-    expect(container.querySelector('[data-testid="desktop-main-area-host"]')).not.toBeNull()
-  })
-
-  it('restores the chat workspace after leaving a managed page plugin', async () => {
-    await act(async () => {
-      root.render(
-        <LocaleProvider>
-          <ToastProvider>
-            <MemoryRouter initialEntries={['/t/thread-1']}>
-              <AuthProvider accessToken="token" onLoggedOut={vi.fn()}>
-                <ThreadListProvider>
-                  <AppUIProvider>
-                    <BrowserTabsProvider>
-                      <PluginRuntimeProvider>
-                        <PluginBrowserSessionProvider>
-                          <CreditsProvider>
-                            <PluginThenNavigate to="/t/thread-2" />
-                            <LocationProbe />
-                            <Routes>
-                              <Route element={<AppLayout />}>
-                                <Route path="/t/:threadId" element={<div data-testid="chat-view">Chat view</div>} />
-                              </Route>
-                            </Routes>
-                          </CreditsProvider>
-                        </PluginBrowserSessionProvider>
-                      </PluginRuntimeProvider>
-                    </BrowserTabsProvider>
-                  </AppUIProvider>
-                </ThreadListProvider>
-              </AuthProvider>
-            </MemoryRouter>
-          </ToastProvider>
-        </LocaleProvider>,
-      )
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/t/thread-2')
     expect(container.querySelector('[data-testid="desktop-main-area-host"]')).toBeNull()
     expect(container.querySelector('[data-testid="chat-view"]')).not.toBeNull()
   })
-
-  it('treats a page plugin as the only selected sidebar entry', async () => {
-    mockedListThreads.mockResolvedValue([
-      {
-        id: 'thread-1',
-        account_id: 'account-1',
-        created_by_user_id: 'user-1',
-        mode: 'chat',
-        title: 'Thread 1',
-        project_id: 'project-1',
-        created_at: '2026-05-09T00:00:00Z',
-        active_run_id: null,
-        is_private: false,
-        collaboration_mode: 'default',
-        collaboration_mode_revision: 1,
-        learning_mode_enabled: false,
-      } satisfies ThreadResponse,
-    ])
-
-    await act(async () => {
-      root.render(
-        <LocaleProvider>
-          <ToastProvider>
-            <MemoryRouter initialEntries={['/t/thread-1']}>
-              <AuthProvider accessToken="token" onLoggedOut={vi.fn()}>
-                <ThreadListProvider>
-                  <AppUIProvider>
-                    <BrowserTabsProvider>
-                      <PluginRuntimeProvider>
-                        <PluginBrowserSessionProvider>
-                          <CreditsProvider>
-                            <PluginOpener pluginId="open-design" />
-                            <Routes>
-                              <Route element={<AppLayout />}>
-                                <Route path="/t/:threadId" element={<div data-testid="chat-view">Chat view</div>} />
-                              </Route>
-                            </Routes>
-                          </CreditsProvider>
-                        </PluginBrowserSessionProvider>
-                      </PluginRuntimeProvider>
-                    </BrowserTabsProvider>
-                  </AppUIProvider>
-                </ThreadListProvider>
-              </AuthProvider>
-            </MemoryRouter>
-          </ToastProvider>
-        </LocaleProvider>,
-      )
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(
-      container.querySelector('[data-testid="plugin-entry-open-design"]')?.getAttribute('aria-current'),
-    ).toBe('page')
-    expect(container.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
-  })
-
 })

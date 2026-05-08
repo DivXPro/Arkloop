@@ -13,14 +13,15 @@ const openDesignLauncher: PluginLauncherSpec = {
   processes: [
     {
       id: 'daemon',
-      command: 'node',
+      command: 'pnpm',
       args: [
-        'apps/daemon/dist/cli.js',
-        '--port',
+        'tools-dev',
+        'run',
+        'web',
+        '--daemon-port',
         '{port:daemon}',
-        '--host',
-        '127.0.0.1',
-        '--no-open',
+        '--web-port',
+        '{port:web}',
       ],
       cwd: 'projectPath',
       env: {
@@ -28,22 +29,24 @@ const openDesignLauncher: PluginLauncherSpec = {
         OD_DATA_DIR: '{runtimeRoot}/data',
       },
       preferredPort: 17456,
+      launchMode: 'health-only',
     },
     {
       id: 'web',
       command: 'pnpm',
       args: [
-        '--filter',
-        '@open-design/web',
-        'dev',
-        '--hostname',
-        '127.0.0.1',
-        '--port',
+        'tools-dev',
+        'run',
+        'web',
+        '--daemon-port',
+        '{port:daemon}',
+        '--web-port',
         '{port:web}',
       ],
       cwd: 'projectPath',
       env: {
-        OD_DAEMON_URL: 'http://127.0.0.1:{port:daemon}',
+        OD_PORT: '{port:daemon}',
+        OD_DATA_DIR: '{runtimeRoot}/data',
         PORT: '{port:web}',
       },
       preferredPort: 17573,
@@ -56,6 +59,27 @@ const openDesignLauncher: PluginLauncherSpec = {
 }
 
 export const builtinPlugins: PluginDefinition[] = [
+  {
+    id: 'open-design',
+    title: 'Open Design',
+    desktopOnly: true,
+    nav: { section: 'workspace', order: 130 },
+    shell: { mode: 'plugin-main' },
+    presentation: {
+      default: 'page-external',
+      supported: ['page-external'],
+    },
+    surfaces: {
+      managedApp: {
+        managedAppId: 'open-design',
+        mountTarget: 'main-workspace',
+      },
+    },
+    launcher: openDesignLauncher,
+  },
+]
+
+const internalBuiltinPlugins: PluginDefinition[] = [
   {
     id: 'sample-page-plugin',
     title: 'Sample Page Plugin',
@@ -107,30 +131,14 @@ export const builtinPlugins: PluginDefinition[] = [
       browserPlacement: 'sidecar',
     },
   },
-  {
-    id: 'open-design',
-    title: 'Open Design',
-    desktopOnly: true,
-    nav: { section: 'workspace', order: 130 },
-    shell: { mode: 'plugin-main' },
-    presentation: {
-      default: 'page-external',
-      supported: ['page-external'],
-    },
-    surfaces: {
-      managedApp: {
-        managedAppId: 'open-design',
-        mountTarget: 'main-workspace',
-      },
-    },
-    launcher: openDesignLauncher,
-  },
 ]
+
+const allBuiltinPlugins: PluginDefinition[] = [...builtinPlugins, ...internalBuiltinPlugins]
 
 export function listBuiltinPlugins(): PluginDefinition[] {
   return [...builtinPlugins].sort((left, right) => left.nav.order - right.nav.order)
 }
 
 export function getBuiltinPluginById(pluginId: string): PluginDefinition | null {
-  return builtinPlugins.find((plugin) => plugin.id === pluginId) ?? null
+  return allBuiltinPlugins.find((plugin) => plugin.id === pluginId) ?? null
 }

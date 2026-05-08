@@ -17,14 +17,15 @@ describe('resolveManagedLocalAppSpec', () => {
         processes: [
           {
             id: 'daemon',
-            command: 'node',
-            args: ['apps/daemon/dist/cli.js', '--port', '{port:daemon}'],
+            command: 'pnpm',
+            args: ['tools-dev', 'run', 'web', '--daemon-port', '{port:daemon}', '--web-port', '{port:web}'],
             cwd: 'projectPath',
             env: {
               OD_PORT: '{port:daemon}',
               OD_DATA_DIR: '{runtimeRoot}/data',
             },
             preferredPort: 17456,
+            launchMode: 'health-only',
           },
         ],
         healthChecks: [{ processId: 'daemon', path: '/api/projects' }],
@@ -38,5 +39,6 @@ describe('resolveManagedLocalAppSpec', () => {
     expect(spec?.processes[0]?.cwd).toBe('/Users/huhui/Projects/open-design')
     expect(spec?.processes[0]?.args).toContain('17456')
     expect(spec?.processes[0]?.env.OD_DATA_DIR).toBe('/Users/huhui/.arkloop/integrations/open-design/data')
+    expect(spec?.processes[0]?.launchMode).toBe('health-only')
   })
 })

@@ -160,7 +160,7 @@ describe('PluginRuntimeProvider', () => {
     expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('none')
   })
 
-  it('keeps a managed page plugin active while staying on workspace routes', async () => {
+  it('clears a managed page plugin when switching to another workspace thread', async () => {
     await act(async () => {
       root.render(
         <MemoryRouter initialEntries={['/t/thread-1']}>
@@ -190,6 +190,6 @@ describe('PluginRuntimeProvider', () => {
     })
 
     expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/t/thread-2')
-    expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('open-design')
+    expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('none')
   })
 })

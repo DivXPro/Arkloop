@@ -115,6 +115,17 @@ describe('PluginHostPage', () => {
     expect(plugin?.surfaces.managedApp?.managedAppId).toBe('open-design')
     expect(plugin?.launcher?.localConfigKey).toBe('projectPath')
     expect(plugin?.launcher?.processes.map((process) => process.id)).toEqual(['daemon', 'web'])
+    expect(plugin?.launcher?.processes[0]).toMatchObject({
+      id: 'daemon',
+      command: 'pnpm',
+      launchMode: 'health-only',
+      args: ['tools-dev', 'run', 'web', '--daemon-port', '{port:daemon}', '--web-port', '{port:web}'],
+    })
+    expect(plugin?.launcher?.processes[1]).toMatchObject({
+      id: 'web',
+      command: 'pnpm',
+      args: ['tools-dev', 'run', 'web', '--daemon-port', '{port:daemon}', '--web-port', '{port:web}'],
+    })
   })
 
   afterEach(() => {

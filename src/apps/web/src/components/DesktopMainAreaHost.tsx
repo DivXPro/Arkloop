@@ -18,18 +18,22 @@ export function DesktopMainAreaHost({ appId }: { appId: ManagedDesktopAppId }) {
   useEffect(() => {
     const api = getDesktopApi()
     const managedApps = api?.managedApps
-    if (!managedApps || !ref.current) return
+    const element = ref.current
+    if (!managedApps || !element) return
 
     const syncBounds = () => {
-      if (!ref.current) return
-      void managedApps.syncMainAreaBounds(appId, readBounds(ref.current))
+      void managedApps.syncMainAreaBounds(appId, readBounds(element))
     }
 
-    void managedApps.mountMainArea(appId, readBounds(ref.current))
+    void managedApps.mountMainArea(appId, readBounds(element))
     syncBounds()
+    const resizeObserver =
+      typeof ResizeObserver === 'function' ? new ResizeObserver(() => syncBounds()) : null
+    resizeObserver?.observe(element)
     window.addEventListener('resize', syncBounds)
 
     return () => {
+      resizeObserver?.disconnect()
       window.removeEventListener('resize', syncBounds)
       void managedApps.unmountMainArea(appId)
     }
