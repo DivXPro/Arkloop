@@ -27,6 +27,7 @@ import { setupAppUpdater } from './app-updater'
 import { setupMainProcessLogging, getDesktopLogDir } from './logging'
 import { syncLocalVersions } from './updater'
 import { ensureBrowserSearchServer, closeBrowserSearchServer } from './browser-search'
+import { createMainAreaBrowserHost } from './browser-main-area'
 import { initializeBrowserTabs, setBrowserTabsStateListener, closeAllBrowserTabs, listBrowserTabs } from './browser-tabs'
 import { getManagedLocalAppSpec } from './managed-local-apps/registry'
 import { createManagedLocalAppRuntimeManager } from './managed-local-apps/runtime-manager'
@@ -153,6 +154,8 @@ async function installReactDevTools(): Promise<void> {
 function getWindow(): BrowserWindow | null {
   return mainWindow
 }
+
+const browserMainAreaHost = createMainAreaBrowserHost({ getWindow })
 
 function showMainWindow(): void {
   ensureDockPresence()
@@ -613,9 +616,19 @@ if (!hasSingleInstanceLock) {
             : managedAppRuntimeManager.restartApp(appId)
         },
         stop: async (appId) => managedAppRuntimeManager.stopApp(appId),
-        mountMainArea: async () => {},
-        syncMainAreaBounds: async () => {},
-        unmountMainArea: async () => {},
+        mountMainArea: async (appId, bounds) => {
+          const runtime = managedAppRuntimeManager.getStatus(appId)
+          if (runtime.status !== 'running' || !runtime.webUrl) {
+            throw new Error(`managed app ${appId} is not running`)
+          }
+          await browserMainAreaHost.show(appId, runtime.webUrl, bounds)
+        },
+        syncMainAreaBounds: async (appId, bounds) => {
+          browserMainAreaHost.syncBounds(appId, bounds)
+        },
+        unmountMainArea: async (appId) => {
+          browserMainAreaHost.hide(appId)
+        },
       },
     })
     try {
@@ -685,6 +698,7 @@ if (!hasSingleInstanceLock) {
       destroyTray()
       try {
         closeAllBrowserTabs()
+        browserMainAreaHost.hide('open-design')
         const cfg = loadConfig()
         if (cfg.mode === 'local') {
           await stopBridgeOpenvikingIfNeeded(cfg.memory)
