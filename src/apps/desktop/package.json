@@ -15,6 +15,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:electron": "node scripts/dev.mjs",
     "preview:mac": "node scripts/preview-mac-app.mjs",
+    "test": "vitest run",
     "build": "pnpm build:web && pnpm build:electron && pnpm build:sidecar",
     "build:web": "node scripts/build-web-for-desktop.mjs",
     "build:electron": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json",
@@ -40,6 +41,7 @@
     "@types/node": "^22.16.0",
     "electron": "^41.0.3",
     "electron-builder": "^26.0.12",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.2"
   }
 }
