@@ -2,6 +2,7 @@ import {
   SampleHybridPluginPage,
   SamplePagePluginPage,
 } from './builtin/SamplePluginPage'
+import { OpenDesignPluginPage } from './builtin/OpenDesignPluginPage'
 import type { PluginDefinition } from './types'
 
 export const builtinPlugins: PluginDefinition[] = [
@@ -54,6 +55,20 @@ export const builtinPlugins: PluginDefinition[] = [
         return target || 'https://example.com/'
       },
       browserPlacement: 'sidecar',
+    },
+  },
+  {
+    id: 'open-design',
+    title: 'Open Design',
+    desktopOnly: true,
+    nav: { section: 'workspace', order: 130 },
+    shell: { mode: 'plugin-main' },
+    presentation: {
+      default: 'route',
+      supported: ['route'],
+    },
+    surfaces: {
+      mount: OpenDesignPluginPage,
     },
   },
 ]

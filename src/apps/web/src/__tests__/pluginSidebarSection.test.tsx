@@ -60,6 +60,7 @@ describe('PluginSidebarSection', () => {
     expect(container.textContent).toContain('Sample Page Plugin')
     expect(container.textContent).toContain('Sample Browser Plugin')
     expect(container.textContent).toContain('Sample Hybrid Plugin')
+    expect(container.textContent).toContain('Open Design')
 
     await act(async () => {
       container

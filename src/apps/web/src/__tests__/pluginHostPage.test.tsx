@@ -66,10 +66,30 @@ const desktopMock = vi.hoisted(() => {
     }),
   }
 
+  const managedAppsApi = {
+    ensureStarted: vi.fn().mockResolvedValue({
+      appId: 'open-design',
+      status: 'running',
+      pid: 321,
+      webUrl: 'http://127.0.0.1:54321/',
+      lastError: null,
+      startedAt: '2026-05-09T00:00:00.000Z',
+    }),
+    getStatus: vi.fn(),
+    restart: vi.fn(),
+    showMainArea: vi.fn().mockResolvedValue({ ok: true }),
+    hideMainArea: vi.fn().mockResolvedValue({ ok: true }),
+    syncMainAreaBounds: vi.fn().mockResolvedValue({ ok: true }),
+  }
+
   return {
     isDesktop: vi.fn(() => true),
-    getDesktopApi: vi.fn(() => ({ browserTabs: browserTabsApi })),
+    getDesktopApi: vi.fn(() => ({
+      browserTabs: browserTabsApi,
+      managedApps: managedAppsApi,
+    })),
     browserTabsApi,
+    managedAppsApi,
   }
 })
 
@@ -178,5 +198,30 @@ describe('PluginHostPage', () => {
     expect(container.querySelector('[data-testid="sample-hybrid-plugin-page"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="browser-tab-page"]')).not.toBeNull()
     expect(container.querySelector('[data-testid^="plugin-presentation-button-"]')).toBeNull()
+  })
+
+  it('renders open-design plugin page through route surface', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/plugins/open-design']}>
+          <LocaleProvider>
+            <BrowserTabsProvider>
+              <PluginRuntimeProvider>
+                <PluginBrowserSessionProvider>
+                  <Routes>
+                    <Route path="/plugins/:pluginId" element={<PluginHostPage />} />
+                  </Routes>
+                </PluginBrowserSessionProvider>
+              </PluginRuntimeProvider>
+            </BrowserTabsProvider>
+          </LocaleProvider>
+        </MemoryRouter>,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="open-design-plugin-ready"]')).not.toBeNull()
+    expect(desktopMock.managedAppsApi.ensureStarted).toHaveBeenCalledWith('open-design')
   })
 })
