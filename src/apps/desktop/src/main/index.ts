@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, nativeImage, powerSaveBlocker, session, shell } from 'electron'
+import { spawn, type ChildProcess } from 'node:child_process'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -25,6 +26,18 @@ import { setupAppUpdater } from './app-updater'
 import { setupMainProcessLogging, getDesktopLogDir } from './logging'
 import { syncLocalVersions } from './updater'
 import { ensureBrowserSearchServer, closeBrowserSearchServer } from './browser-search'
+import { createMainAreaBrowserHost } from './browser-main-area'
+import {
+  getOpenDesignInstallPaths,
+  readOpenDesignReadyFile,
+  validateOpenDesignInstall,
+} from './managed-apps/open-design'
+import { createManagedAppRuntimeManager } from './managed-apps/runtime-manager'
+import type {
+  ManagedAppId,
+  ManagedAppMainAreaBounds,
+  ManagedAppState,
+} from './managed-apps/types'
 import type { AppConfig, ApplyConfigUpdateOptions } from './types'
 
 app.setName('Arkloop')
@@ -38,6 +51,9 @@ setupMainProcessLogging()
 let mainWindow: BrowserWindow | null = null
 let activeSidecarPort: number | null = null
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
+const managedAppProcesses = new Map<ManagedAppId, ChildProcess>()
+const OPEN_DESIGN_READY_TIMEOUT_MS = 30_000
+const OPEN_DESIGN_READY_POLL_MS = 400
 
 const REACT_DEVTOOLS_EXTENSION_ID = 'fmkadmapgofadopljbjfkapdkoienihi'
 
@@ -147,6 +163,170 @@ async function installReactDevTools(): Promise<void> {
 
 function getWindow(): BrowserWindow | null {
   return mainWindow
+}
+
+const mainAreaBrowserHost = createMainAreaBrowserHost({
+  getWindow,
+})
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function terminateProcess(pid: number): Promise<void> {
+  if (!isProcessAlive(pid)) return
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {}
+
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    if (!isProcessAlive(pid)) return
+    await sleep(200)
+  }
+
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {}
+}
+
+async function launchManagedApp(appId: ManagedAppId): Promise<{ pid: number }> {
+  if (appId !== 'open-design') {
+    throw new Error(`unsupported managed app: ${appId}`)
+  }
+
+  const existing = managedAppProcesses.get(appId)
+  if (existing?.pid && existing.exitCode === null) {
+    return { pid: existing.pid }
+  }
+
+  const installPaths = getOpenDesignInstallPaths()
+  validateOpenDesignInstall(installPaths)
+
+  const child = spawn(installPaths.nodeBinary, [installPaths.entryScript], {
+    cwd: installPaths.runtimeRoot,
+    env: {
+      ...process.env,
+      OD_NAMESPACE: 'default',
+      OD_DATA_DIR: installPaths.dataRoot,
+      OD_RESOURCE_ROOT: installPaths.resourcesRoot,
+      OD_WEB_OUTPUT_MODE: 'server',
+    },
+    stdio: 'ignore',
+  })
+
+  if (!child.pid) {
+    throw new Error('failed to start open design runtime')
+  }
+
+  managedAppProcesses.set(appId, child)
+  child.once('exit', () => {
+    const current = managedAppProcesses.get(appId)
+    if (current === child) {
+      managedAppProcesses.delete(appId)
+    }
+  })
+
+  return { pid: child.pid }
+}
+
+async function pollManagedAppReady(appId: ManagedAppId): Promise<{ webUrl: string }> {
+  if (appId !== 'open-design') {
+    throw new Error(`unsupported managed app: ${appId}`)
+  }
+
+  const installPaths = getOpenDesignInstallPaths()
+  const deadline = Date.now() + OPEN_DESIGN_READY_TIMEOUT_MS
+
+  while (Date.now() < deadline) {
+    const child = managedAppProcesses.get(appId)
+    if (!child || child.exitCode !== null) {
+      throw new Error('open design runtime exited before ready')
+    }
+
+    if (fs.existsSync(installPaths.readyFile)) {
+      const raw = fs.readFileSync(installPaths.readyFile, 'utf8')
+      return readOpenDesignReadyFile(raw)
+    }
+    await sleep(OPEN_DESIGN_READY_POLL_MS)
+  }
+
+  throw new Error('open design runtime readiness timeout')
+}
+
+async function stopManagedAppByPid(pid: number): Promise<void> {
+  await terminateProcess(pid)
+  for (const [appId, child] of managedAppProcesses.entries()) {
+    if (child.pid === pid) {
+      managedAppProcesses.delete(appId)
+      break
+    }
+  }
+}
+
+async function stopAllManagedApps(): Promise<void> {
+  const pids = Array.from(managedAppProcesses.values())
+    .map((child) => child.pid)
+    .filter((value): value is number => typeof value === 'number')
+  for (const pid of pids) {
+    await stopManagedAppByPid(pid)
+  }
+}
+
+const managedAppRuntimeManager = createManagedAppRuntimeManager({
+  launch: launchManagedApp,
+  pollReady: pollManagedAppReady,
+  stop: stopManagedAppByPid,
+})
+
+async function ensureManagedAppStarted(appId: ManagedAppId): Promise<ManagedAppState> {
+  return managedAppRuntimeManager.ensureStarted(appId)
+}
+
+function getManagedAppState(appId: ManagedAppId): ManagedAppState {
+  return managedAppRuntimeManager.getState(appId)
+}
+
+async function restartManagedApp(appId: ManagedAppId): Promise<ManagedAppState> {
+  await managedAppRuntimeManager.stopApp(appId)
+  return managedAppRuntimeManager.ensureStarted(appId)
+}
+
+async function showManagedAppInMainArea(
+  appId: ManagedAppId,
+  url: string,
+  bounds: ManagedAppMainAreaBounds,
+): Promise<{ ok: boolean }> {
+  if (appId !== 'open-design') {
+    throw new Error(`unsupported managed app: ${appId}`)
+  }
+  return mainAreaBrowserHost.show(appId, url, bounds)
+}
+
+function hideManagedAppInMainArea(appId: ManagedAppId): { ok: boolean } {
+  if (appId !== 'open-design') {
+    throw new Error(`unsupported managed app: ${appId}`)
+  }
+  return mainAreaBrowserHost.hide(appId)
+}
+
+function syncManagedAppMainAreaBounds(
+  appId: ManagedAppId,
+  bounds: ManagedAppMainAreaBounds,
+): { ok: boolean } {
+  if (appId !== 'open-design') {
+    throw new Error(`unsupported managed app: ${appId}`)
+  }
+  return mainAreaBrowserHost.syncBounds(appId, bounds)
 }
 
 function showMainWindow(): void {
@@ -511,6 +691,12 @@ if (!hasSingleInstanceLock) {
       restartLocalSidecar,
       getSidecarRuntime: async () => getSidecarRuntime(),
       setKeepAwakeSessionActive,
+      ensureManagedAppStarted,
+      getManagedAppState,
+      restartManagedApp,
+      showManagedAppInMainArea,
+      hideManagedAppInMainArea,
+      syncManagedAppMainAreaBounds,
     })
     try {
       await ensureBrowserSearchServer(getDesktopAccessToken())
@@ -581,6 +767,7 @@ if (!hasSingleInstanceLock) {
         if (cfg.mode === 'local') {
           await stopBridgeOpenvikingIfNeeded(cfg.memory)
         }
+        await stopAllManagedApps()
         await stopSidecar()
       } catch (err) {
         console.error('[desktop] shutdown error:', err)

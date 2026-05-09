@@ -20,12 +20,23 @@ import { DEFAULT_CONFIG } from './types'
 import { getDesktopLogDir, getDesktopLogPaths } from './logging'
 import { applyOnboardingImport, detectOnboardingImportSources, type OnboardingImportApplyRequest } from './onboarding-import'
 import type { AppConfig, ApplyConfigUpdateOptions, ConnectorsConfig, MemoryConfig } from './types'
+import type {
+  ManagedAppId,
+  ManagedAppMainAreaBounds,
+  ManagedAppState,
+} from './managed-apps/types'
 
 type DesktopController = {
   applyConfigUpdate: (config: AppConfig, options?: ApplyConfigUpdateOptions) => Promise<AppConfig>
   restartLocalSidecar: () => Promise<SidecarRuntime>
   getSidecarRuntime: () => Promise<SidecarRuntime>
   setKeepAwakeSessionActive: (active: boolean) => void
+  ensureManagedAppStarted: (appId: ManagedAppId) => Promise<ManagedAppState>
+  getManagedAppState: (appId: ManagedAppId) => ManagedAppState
+  restartManagedApp: (appId: ManagedAppId) => Promise<ManagedAppState>
+  showManagedAppInMainArea: (appId: ManagedAppId, url: string, bounds: ManagedAppMainAreaBounds) => Promise<{ ok: boolean }>
+  hideManagedAppInMainArea: (appId: ManagedAppId) => { ok: boolean }
+  syncManagedAppMainAreaBounds: (appId: ManagedAppId, bounds: ManagedAppMainAreaBounds) => { ok: boolean }
 }
 
 let desktopSessionAccessToken = ''
@@ -532,6 +543,29 @@ export function registerIpcHandlers(
     return getDesktopLogPaths()
   })
 
+  ipcMain.handle('arkloop:managed-apps:ensure-started', (_event, appId: ManagedAppId) => {
+    return controller.ensureManagedAppStarted(appId)
+  })
+
+  ipcMain.handle('arkloop:managed-apps:get-status', (_event, appId: ManagedAppId) => {
+    return controller.getManagedAppState(appId)
+  })
+
+  ipcMain.handle('arkloop:managed-apps:restart', (_event, appId: ManagedAppId) => {
+    return controller.restartManagedApp(appId)
+  })
+
+  ipcMain.handle('arkloop:managed-apps:show-main-area', (_event, appId: ManagedAppId, url: string, bounds: ManagedAppMainAreaBounds) => {
+    return controller.showManagedAppInMainArea(appId, url, bounds)
+  })
+
+  ipcMain.handle('arkloop:managed-apps:hide-main-area', (_event, appId: ManagedAppId) => {
+    return controller.hideManagedAppInMainArea(appId)
+  })
+
+  ipcMain.handle('arkloop:managed-apps:sync-main-area-bounds', (_event, appId: ManagedAppId, bounds: ManagedAppMainAreaBounds) => {
+    return controller.syncManagedAppMainAreaBounds(appId, bounds)
+  })
   ipcMain.handle('arkloop:dialog:open-folder', async (event) => {
     const { dialog } = require('electron') as typeof import('electron')
     const win = getWindow()

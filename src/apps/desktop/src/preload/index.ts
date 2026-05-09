@@ -290,6 +290,24 @@ export type UpdaterStatus = {
 
 export type UpdaterComponent = 'openviking' | 'sandbox_kernel' | 'sandbox_rootfs' | 'rtk' | 'opencli'
 
+export type ManagedAppId = 'open-design'
+
+export type ManagedAppMainAreaBounds = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type ManagedAppRuntimeState = {
+  appId: ManagedAppId
+  status: 'stopped' | 'starting' | 'running' | 'failed'
+  pid: number | null
+  webUrl: string | null
+  lastError: string | null
+  startedAt: string | null
+}
+
 export type ArkloopDesktopApi = {
   isDesktop: true
   config: {
@@ -384,6 +402,14 @@ export type ArkloopDesktopApi = {
   fs: {
     listDir: (folderPath: string, subPath?: string) => Promise<LocalDirResult>
     readFile: (folderPath: string, relativePath: string) => Promise<LocalFileResult>
+  }
+  managedApps: {
+    ensureStarted: (appId: ManagedAppId) => Promise<ManagedAppRuntimeState>
+    getStatus: (appId: ManagedAppId) => Promise<ManagedAppRuntimeState>
+    restart: (appId: ManagedAppId) => Promise<ManagedAppRuntimeState>
+    showMainArea: (appId: ManagedAppId, url: string, bounds: ManagedAppMainAreaBounds) => Promise<{ ok: boolean }>
+    hideMainArea: (appId: ManagedAppId) => Promise<{ ok: boolean }>
+    syncMainAreaBounds: (appId: ManagedAppId, bounds: ManagedAppMainAreaBounds) => Promise<{ ok: boolean }>
   }
 }
 
@@ -593,6 +619,17 @@ const api: ArkloopDesktopApi = {
   fs: {
     listDir: (folderPath: string, subPath = '/') => ipcRenderer.invoke('arkloop:fs:list-dir', folderPath, subPath),
     readFile: (folderPath: string, relativePath: string) => ipcRenderer.invoke('arkloop:fs:read-file', folderPath, relativePath),
+  },
+
+  managedApps: {
+    ensureStarted: (appId: ManagedAppId) => ipcRenderer.invoke('arkloop:managed-apps:ensure-started', appId),
+    getStatus: (appId: ManagedAppId) => ipcRenderer.invoke('arkloop:managed-apps:get-status', appId),
+    restart: (appId: ManagedAppId) => ipcRenderer.invoke('arkloop:managed-apps:restart', appId),
+    showMainArea: (appId: ManagedAppId, url: string, bounds: ManagedAppMainAreaBounds) =>
+      ipcRenderer.invoke('arkloop:managed-apps:show-main-area', appId, url, bounds),
+    hideMainArea: (appId: ManagedAppId) => ipcRenderer.invoke('arkloop:managed-apps:hide-main-area', appId),
+    syncMainAreaBounds: (appId: ManagedAppId, bounds: ManagedAppMainAreaBounds) =>
+      ipcRenderer.invoke('arkloop:managed-apps:sync-main-area-bounds', appId, bounds),
   },
 }
 

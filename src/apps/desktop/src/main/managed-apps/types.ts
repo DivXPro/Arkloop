@@ -20,3 +20,10 @@ export type OpenDesignInstallPaths = {
   entryScript: string
   readyFile: string
 }
+
+export type ManagedAppMainAreaBounds = {
+  x: number
+  y: number
+  width: number
+  height: number
+}

@@ -197,6 +197,24 @@ export type UpdaterStatus = {
 
 export type UpdaterComponent = 'openviking' | 'sandbox_kernel' | 'sandbox_rootfs' | 'rtk' | 'opencli'
 
+export type ManagedAppId = 'open-design'
+
+export type ManagedAppMainAreaBounds = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type ManagedAppRuntimeState = {
+  appId: ManagedAppId
+  status: 'stopped' | 'starting' | 'running' | 'failed'
+  pid: number | null
+  webUrl: string | null
+  lastError: string | null
+  startedAt: string | null
+}
+
 export type ArkloopDesktopApi = {
   isDesktop: true
   config: {
@@ -291,6 +309,14 @@ export type ArkloopDesktopApi = {
   fs?: {
     listDir: (folderPath: string, subPath?: string) => Promise<{ entries: LocalFileEntry[] }>
     readFile: (folderPath: string, relativePath: string) => Promise<{ data: string; mime_type: string } | { error: string }>
+  }
+  managedApps?: {
+    ensureStarted: (appId: ManagedAppId) => Promise<ManagedAppRuntimeState>
+    getStatus: (appId: ManagedAppId) => Promise<ManagedAppRuntimeState>
+    restart: (appId: ManagedAppId) => Promise<ManagedAppRuntimeState>
+    showMainArea: (appId: ManagedAppId, url: string, bounds: ManagedAppMainAreaBounds) => Promise<{ ok: boolean }>
+    hideMainArea: (appId: ManagedAppId) => Promise<{ ok: boolean }>
+    syncMainAreaBounds: (appId: ManagedAppId, bounds: ManagedAppMainAreaBounds) => Promise<{ ok: boolean }>
   }
 }
 
