@@ -12,6 +12,7 @@ export function createMainAreaBrowserHost(deps: {
   createView?: () => BrowserView
 }) {
   const views = new Map<string, BrowserView>()
+  const pendingLoads = new Set<string>()
   const createView = deps.createView
     ?? (() => new BrowserView({
       webPreferences: {
@@ -38,8 +39,15 @@ export function createMainAreaBrowserHost(deps: {
       view.setBounds(bounds)
       view.setAutoResize({ width: true, height: true })
 
-      if (view.webContents.getURL() !== url) {
-        await view.webContents.loadURL(url)
+      if (view.webContents.getURL() !== url && !pendingLoads.has(appId)) {
+        pendingLoads.add(appId)
+        try {
+          await view.webContents.loadURL(url)
+        } catch {
+          // ignore load errors (e.g. abort) so they don't bubble as unhandled rejections
+        } finally {
+          pendingLoads.delete(appId)
+        }
       }
 
       return { ok: true }
