@@ -6,9 +6,7 @@ const exact = new Map<string, KindConfig>()
 const prefix = new Map<string, KindConfig>()
 
 let defaultConfig: KindConfig = {
-  previewable: false,
-  cardType: 'compact',
-  defaultDisplay: 'inline',
+  inlineMode: 'link',
 }
 
 export function registerKind(kind: string, config: KindConfig): void {
@@ -37,22 +35,22 @@ export function setDefaultKindConfig(config: KindConfig): void {
 
 // --- 内置配置 ---
 
-// 图像类：支持内联预览
-const img: KindConfig = { previewable: true, cardType: 'thumbnail', defaultDisplay: 'inline' }
+// 图像类：inline 直接展示图片
+const img: KindConfig = { inlineMode: 'image' }
 registerKindPrefix('image.', img)
 
-// 设计类：不预览，紧凑卡片
-const design: KindConfig = { previewable: false, cardType: 'compact', defaultDisplay: 'inline' }
+// 设计类：inline 展示可预览的卡片
+const design: KindConfig = { inlineMode: 'card-preview' }
 registerKindPrefix('design.', design)
 
-// 文档类：不预览，紧凑卡片
-const doc: KindConfig = { previewable: false, cardType: 'compact', defaultDisplay: 'inline' }
+// 文档类：inline 展示可预览的卡片
+const doc: KindConfig = { inlineMode: 'card-preview' }
 registerKindPrefix('document.', doc)
 
-// 代码类：不预览，紧凑卡片
-const code: KindConfig = { previewable: false, cardType: 'compact', defaultDisplay: 'inline' }
+// 代码类：inline 展示可预览的卡片
+const code: KindConfig = { inlineMode: 'card-preview' }
 registerKindPrefix('code.', code)
 
-// 数据类：不预览，详细卡片
-const data: KindConfig = { previewable: false, cardType: 'detailed', defaultDisplay: 'inline' }
+// 数据类：inline 展示可预览的卡片
+const data: KindConfig = { inlineMode: 'card-preview' }
 registerKindPrefix('data.', data)

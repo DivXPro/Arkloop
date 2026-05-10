@@ -31,6 +31,7 @@ export interface ArtifactResource {
   fetchMode: 'object-blob' | 'api-resource' | 'external-url' | 'plugin-resolver' | 'inline-json'
   descriptor: Record<string, unknown>
   capabilities?: string[]
+  display?: 'inline' | 'panel'
 }
 
 /**
@@ -59,12 +60,12 @@ export interface ArtifactContext {
 
 /**
  * 系统级 kind 渲染配置（非消息字段，启动时注册）
+ * inlineMode 决定 inline 状态下的渲染方式
+ * viewer 指定打开时使用的 viewer（可选）
  */
 export interface KindConfig {
-  previewable: boolean
-  cardType: string
-  defaultDisplay: string
-  defaultViewer?: string
+  inlineMode: 'image' | 'iframe' | 'card-preview' | 'link'
+  viewer?: string
 }
 
 /**

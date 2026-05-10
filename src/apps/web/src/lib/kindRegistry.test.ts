@@ -2,51 +2,53 @@ import { describe, it, expect } from 'vitest'
 import { getKindConfig, registerKind, registerKindPrefix, setDefaultKindConfig } from './kindRegistry'
 
 describe('kindRegistry', () => {
-  it('returns previewable=true for image kinds via prefix', () => {
-    expect(getKindConfig('image.png').previewable).toBe(true)
-    expect(getKindConfig('image.jpeg').previewable).toBe(true)
-    expect(getKindConfig('image.generated').previewable).toBe(true)
+  it('returns inlineMode=image for image kinds via prefix', () => {
+    expect(getKindConfig('image.png').inlineMode).toBe('image')
+    expect(getKindConfig('image.jpeg').inlineMode).toBe('image')
+    expect(getKindConfig('image.generated').inlineMode).toBe('image')
   })
 
-  it('returns previewable=false for design kinds', () => {
-    expect(getKindConfig('design.canvas').previewable).toBe(false)
-    expect(getKindConfig('design.figma').previewable).toBe(false)
+  it('returns inlineMode=card-preview for design kinds', () => {
+    expect(getKindConfig('design.canvas').inlineMode).toBe('card-preview')
+    expect(getKindConfig('design.figma').inlineMode).toBe('card-preview')
   })
 
-  it('returns previewable=false for document kinds', () => {
-    expect(getKindConfig('document.markdown').previewable).toBe(false)
+  it('returns inlineMode=card-preview for document kinds', () => {
+    expect(getKindConfig('document.markdown').inlineMode).toBe('card-preview')
   })
 
-  it('returns previewable=false for code kinds', () => {
-    expect(getKindConfig('code.python').previewable).toBe(false)
+  it('returns inlineMode=card-preview for code kinds', () => {
+    expect(getKindConfig('code.python').inlineMode).toBe('card-preview')
   })
 
-  it('returns previewable=false for data kinds', () => {
-    expect(getKindConfig('data.csv').previewable).toBe(false)
+  it('returns inlineMode=card-preview for data kinds', () => {
+    expect(getKindConfig('data.csv').inlineMode).toBe('card-preview')
   })
 
   it('returns default config for unknown kinds', () => {
     const cfg = getKindConfig('unknown.something')
-    expect(cfg.previewable).toBe(false)
-    expect(cfg.cardType).toBe('compact')
+    expect(cfg.inlineMode).toBe('link')
+    expect(cfg.viewer).toBeUndefined()
   })
 
   it('exact match overrides prefix match', () => {
-    registerKind('image.special', { previewable: false, cardType: 'compact', defaultDisplay: 'inline' })
-    expect(getKindConfig('image.special').previewable).toBe(false)
+    registerKind('image.special', { inlineMode: 'link' })
+    expect(getKindConfig('image.special').inlineMode).toBe('link')
     // other image kinds still use prefix rule
-    expect(getKindConfig('image.png').previewable).toBe(true)
+    expect(getKindConfig('image.png').inlineMode).toBe('image')
   })
 
   it('custom prefix works', () => {
-    registerKindPrefix('custom.', { previewable: true, cardType: 'thumbnail', defaultDisplay: 'inline' })
-    expect(getKindConfig('custom.thing').previewable).toBe(true)
+    registerKindPrefix('custom.', { inlineMode: 'iframe', viewer: 'editor' })
+    expect(getKindConfig('custom.thing').inlineMode).toBe('iframe')
+    expect(getKindConfig('custom.thing').viewer).toBe('editor')
   })
 
   it('setDefault changes fallback', () => {
-    setDefaultKindConfig({ previewable: true, cardType: 'thumbnail', defaultDisplay: 'collapsed' })
-    expect(getKindConfig('totally.unknown').previewable).toBe(true)
+    setDefaultKindConfig({ inlineMode: 'iframe', viewer: 'editor' })
+    expect(getKindConfig('totally.unknown').inlineMode).toBe('iframe')
+    expect(getKindConfig('totally.unknown').viewer).toBe('editor')
     // restore for other tests
-    setDefaultKindConfig({ previewable: false, cardType: 'compact', defaultDisplay: 'inline' })
+    setDefaultKindConfig({ inlineMode: 'link' })
   })
 })

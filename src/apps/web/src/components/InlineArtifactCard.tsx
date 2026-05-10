@@ -14,7 +14,10 @@ export function InlineArtifactCard({ resource, title, onClick }: Props) {
   const displayTitle = title || resource.title || 'Untitled'
   const isObjectBlob = resource.fetchMode === 'object-blob'
   const kindConfig = getKindConfig(resource.kind)
-  const showPreview = isObjectBlob && kindConfig.previewable && !imageError
+  // display 由 artifact 数据定义（'inline' | 'panel'），缺省为 'inline'
+  const display = resource.display || 'inline'
+  // panel 模式下只展示紧凑卡片，不展开 inline 预览
+  const showImagePreview = display === 'inline' && isObjectBlob && kindConfig.inlineMode === 'image' && !imageError
 
   return (
     <div
@@ -75,7 +78,7 @@ export function InlineArtifactCard({ resource, title, onClick }: Props) {
         </span>
       </div>
 
-      {showPreview && (
+      {showImagePreview && (
         <div className="artifact-preview" style={{ marginTop: '8px' }}>
           <img
             src={`/v1/artifacts/${resource.descriptor.key as string}/preview`}

@@ -1295,11 +1295,17 @@ func (w *eventWriter) extractArtifactsFromToolResult(result map[string]any, tool
 			kind = "unknown"
 		}
 
+		display, _ := m["display"].(string)
+		if display != "panel" {
+			display = "inline"
+		}
+
 		w.artifacts = append(w.artifacts, artifact.Resource{
 			ID:        key,
 			Kind:      kind,
 			Title:     title,
 			MimeType:  &mimeType,
+			Display:   display,
 			Producer:  artifact.Producer{Type: "agent", ID: toolName, RunID: &runID},
 			FetchMode: "object-blob",
 			Descriptor: map[string]any{

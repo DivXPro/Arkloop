@@ -6,82 +6,83 @@ import (
 
 func TestRegistryExactMatch(t *testing.T) {
 	r := NewRegistry()
-	r.Register("foo.bar", KindConfig{Previewable: true, CardType: "thumbnail", DefaultDisplay: "inline"})
+	r.Register("foo.bar", KindConfig{InlineMode: "image", Viewer: strPtr("gallery")})
 
 	cfg := r.Get("foo.bar")
-	if !cfg.Previewable {
-		t.Fatalf("expected previewable=true for exact match")
+	if cfg.InlineMode != "image" {
+		t.Fatalf("expected inlineMode=image for exact match, got %s", cfg.InlineMode)
 	}
-	if cfg.CardType != "thumbnail" {
-		t.Fatalf("expected cardType=thumbnail, got %s", cfg.CardType)
+	if cfg.Viewer == nil || *cfg.Viewer != "gallery" {
+		t.Fatalf("expected viewer=gallery for exact match")
 	}
 }
 
 func TestRegistryPrefixMatch(t *testing.T) {
 	r := NewRegistry()
-	r.RegisterPrefix("image.", KindConfig{Previewable: true, CardType: "thumbnail", DefaultDisplay: "inline"})
+	r.RegisterPrefix("image.", KindConfig{InlineMode: "image"})
 
 	cfg := r.Get("image.png")
-	if !cfg.Previewable {
-		t.Fatalf("expected previewable=true for prefix match")
+	if cfg.InlineMode != "image" {
+		t.Fatalf("expected inlineMode=image for prefix match, got %s", cfg.InlineMode)
 	}
 }
 
 func TestRegistryExactOverridesPrefix(t *testing.T) {
 	r := NewRegistry()
-	r.RegisterPrefix("image.", KindConfig{Previewable: true, CardType: "thumbnail", DefaultDisplay: "inline"})
-	r.Register("image.special", KindConfig{Previewable: false, CardType: "compact", DefaultDisplay: "inline"})
+	r.RegisterPrefix("image.", KindConfig{InlineMode: "image"})
+	r.Register("image.special", KindConfig{InlineMode: "card-preview"})
 
 	cfg := r.Get("image.special")
-	if cfg.Previewable {
-		t.Fatalf("expected exact match to override prefix")
+	if cfg.InlineMode != "card-preview" {
+		t.Fatalf("expected exact match to override prefix, got %s", cfg.InlineMode)
 	}
 
 	// other image kinds still use prefix
 	cfg2 := r.Get("image.jpeg")
-	if !cfg2.Previewable {
-		t.Fatalf("expected prefix match for other image kinds")
+	if cfg2.InlineMode != "image" {
+		t.Fatalf("expected prefix match for other image kinds, got %s", cfg2.InlineMode)
 	}
 }
 
 func TestRegistryDefaultFallback(t *testing.T) {
 	r := NewRegistry()
-	r.Register("known", KindConfig{Previewable: true, CardType: "thumbnail", DefaultDisplay: "inline"})
+	r.Register("known", KindConfig{InlineMode: "image"})
 
 	cfg := r.Get("unknown")
-	if cfg.Previewable {
-		t.Fatalf("expected default fallback previewable=false")
-	}
-	if cfg.CardType != "compact" {
-		t.Fatalf("expected default cardType=compact, got %s", cfg.CardType)
+	if cfg.InlineMode != "link" {
+		t.Fatalf("expected default fallback inlineMode=link, got %s", cfg.InlineMode)
 	}
 }
 
 func TestRegistrySetDefault(t *testing.T) {
 	r := NewRegistry()
-	r.SetDefault(KindConfig{Previewable: true, CardType: "detailed", DefaultDisplay: "collapsed"})
+	r.SetDefault(KindConfig{InlineMode: "iframe", Viewer: strPtr("editor")})
 
 	cfg := r.Get("anything")
-	if !cfg.Previewable {
-		t.Fatalf("expected custom default previewable=true")
+	if cfg.InlineMode != "iframe" {
+		t.Fatalf("expected custom default inlineMode=iframe, got %s", cfg.InlineMode)
 	}
-	if cfg.DefaultDisplay != "collapsed" {
-		t.Fatalf("expected custom default display=collapsed, got %s", cfg.DefaultDisplay)
+	if cfg.Viewer == nil || *cfg.Viewer != "editor" {
+		t.Fatalf("expected custom default viewer=editor")
 	}
+}
+
+func strPtr(s string) *string {
+	return &s
 }
 
 func TestDefaultRegistryBuiltin(t *testing.T) {
 	// 验证 init 中注册的内置配置
-	if !DefaultRegistry.Get("image.png").Previewable {
-		t.Fatalf("expected image.png to be previewable")
+	if DefaultRegistry.Get("image.png").InlineMode != "image" {
+		t.Fatalf("expected image.png inlineMode=image")
 	}
-	if DefaultRegistry.Get("design.canvas").Previewable {
-		t.Fatalf("expected design.canvas not to be previewable")
+	if DefaultRegistry.Get("design.canvas").InlineMode != "card-preview" {
+		t.Fatalf("expected design.canvas inlineMode=card-preview")
 	}
-	if DefaultRegistry.Get("document.markdown").CardType != "compact" {
-		t.Fatalf("expected document.markdown cardType=compact")
+	if DefaultRegistry.Get("document.markdown").InlineMode != "card-preview" {
+		t.Fatalf("expected document.markdown inlineMode=card-preview")
 	}
-	if DefaultRegistry.Get("data.csv").CardType != "detailed" {
-		t.Fatalf("expected data.csv cardType=detailed")
+	if DefaultRegistry.Get("data.csv").InlineMode != "card-preview" {
+		t.Fatalf("expected data.csv inlineMode=card-preview")
 	}
 }

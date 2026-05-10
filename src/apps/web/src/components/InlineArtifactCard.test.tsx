@@ -57,7 +57,7 @@ describe('InlineArtifactCard', () => {
     expect(html).toContain('inline-artifact-art_003')
   })
 
-  it('shows image preview for object-blob image kinds', () => {
+  it('shows image preview for inline object-blob image kinds', () => {
     const html = renderToStaticMarkup(
       <InlineArtifactCard
         resource={{
@@ -66,6 +66,7 @@ describe('InlineArtifactCard', () => {
           title: 'Photo',
           producer: { type: 'agent', id: 'test' },
           fetchMode: 'object-blob',
+          display: 'inline',
           descriptor: { key: 'test/photo.png' },
         }}
       />,
@@ -90,5 +91,25 @@ describe('InlineArtifactCard', () => {
     )
 
     expect(html).not.toContain('<img')
+  })
+
+  it('does not show image preview when display=panel', () => {
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_006',
+          kind: 'image.png',
+          title: 'Panel Photo',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'object-blob',
+          display: 'panel',
+          descriptor: { key: 'test/panel.png' },
+        }}
+      />,
+    )
+
+    expect(html).not.toContain('/v1/artifacts/test/panel.png/preview')
+    expect(html).not.toContain('<img')
+    expect(html).toContain('Panel Photo')
   })
 })

@@ -23,6 +23,7 @@ type Resource struct {
 	Summary      *string        `json:"summary,omitempty"`
 	Labels       []string       `json:"labels,omitempty"`
 	MimeType     *string        `json:"mimeType,omitempty"`
+	Display      string         `json:"display"`
 	Producer     Producer       `json:"producer"`
 	FetchMode    string         `json:"fetchMode"`
 	Descriptor   map[string]any `json:"descriptor"`

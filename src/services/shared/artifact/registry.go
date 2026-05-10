@@ -4,11 +4,10 @@ import "sync"
 
 // KindConfig 定义某一 kind 的渲染与交互配置。
 // 配置属于系统级（非消息字段），启动时注册，运行期只读。
+// InlineMode 决定 inline 状态下的渲染方式；Viewer 指定打开时使用的 viewer（可选）。
 type KindConfig struct {
-	Previewable    bool    `json:"previewable"`
-	CardType       string  `json:"cardType"`
-	DefaultDisplay string  `json:"defaultDisplay"`
-	DefaultViewer  *string `json:"defaultViewer,omitempty"`
+	InlineMode string  `json:"inlineMode"`
+	Viewer     *string `json:"viewer,omitempty"`
 }
 
 // Registry 维护 kind → KindConfig 的映射，支持精确匹配和前缀匹配。
@@ -25,9 +24,7 @@ func NewRegistry() *Registry {
 		exact:    make(map[string]KindConfig),
 		prefix:   make(map[string]KindConfig),
 		fallback: KindConfig{
-			Previewable:    false,
-			CardType:       "compact",
-			DefaultDisplay: "inline",
+			InlineMode: "link",
 		},
 	}
 }
@@ -73,27 +70,27 @@ func (r *Registry) SetDefault(cfg KindConfig) {
 var DefaultRegistry = NewRegistry()
 
 func init() {
-	// 图像类：支持内联预览
-	img := KindConfig{Previewable: true, CardType: "thumbnail", DefaultDisplay: "inline"}
+	// 图像类：inline 直接展示图片
+	img := KindConfig{InlineMode: "image"}
 	DefaultRegistry.RegisterPrefix("image.", img)
 
-	// 设计类：不预览，紧凑卡片
-	design := KindConfig{Previewable: false, CardType: "compact", DefaultDisplay: "inline"}
+	// 设计类：inline 展示可预览的卡片
+	design := KindConfig{InlineMode: "card-preview"}
 	DefaultRegistry.RegisterPrefix("design.", design)
 
-	// 文档类：不预览，紧凑卡片
-	doc := KindConfig{Previewable: false, CardType: "compact", DefaultDisplay: "inline"}
+	// 文档类：inline 展示可预览的卡片
+	doc := KindConfig{InlineMode: "card-preview"}
 	DefaultRegistry.RegisterPrefix("document.", doc)
 
-	// 代码类：不预览，紧凑卡片
-	code := KindConfig{Previewable: false, CardType: "compact", DefaultDisplay: "inline"}
+	// 代码类：inline 展示可预览的卡片
+	code := KindConfig{InlineMode: "card-preview"}
 	DefaultRegistry.RegisterPrefix("code.", code)
 
-	// 数据类：不预览，详细卡片
-	data := KindConfig{Previewable: false, CardType: "detailed", DefaultDisplay: "inline"}
+	// 数据类：inline 展示可预览的卡片
+	data := KindConfig{InlineMode: "card-preview"}
 	DefaultRegistry.RegisterPrefix("data.", data)
 
 	// 精确匹配兜底
-	unknown := KindConfig{Previewable: false, CardType: "compact", DefaultDisplay: "inline"}
+	unknown := KindConfig{InlineMode: "link"}
 	DefaultRegistry.SetDefault(unknown)
 }
