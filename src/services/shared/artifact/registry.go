@@ -90,6 +90,14 @@ func init() {
 	data := KindConfig{InlineMode: "card-preview"}
 	DefaultRegistry.RegisterPrefix("data.", data)
 
+	// 社媒类：专用社媒卡片
+	social := KindConfig{InlineMode: "social-card"}
+	DefaultRegistry.RegisterPrefix("social.", social)
+
+	// 电商类：专用商品卡片
+	ecommerce := KindConfig{InlineMode: "product-card"}
+	DefaultRegistry.RegisterPrefix("ecommerce.", ecommerce)
+
 	// 精确匹配兜底
 	unknown := KindConfig{InlineMode: "link"}
 	DefaultRegistry.SetDefault(unknown)

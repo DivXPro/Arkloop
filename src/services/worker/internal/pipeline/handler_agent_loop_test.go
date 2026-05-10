@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"arkloop/services/shared/artifact"
 	"arkloop/services/shared/creditpolicy"
 	"arkloop/services/worker/internal/llm"
 )
@@ -496,5 +497,120 @@ func TestEventWriterFlushPendingToolCallsFiltersHeartbeatDecisionFromPersistentH
 	assistantJSON := string(w.intermediateMessages[0].ContentJSON)
 	if strings.Contains(assistantJSON, "heartbeat_decision") {
 		t.Fatalf("expected heartbeat_decision to be removed from persistent history, got %s", assistantJSON)
+	}
+}
+
+func TestParseArtifactTags(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    []artifactTag
+	}{
+		{
+			name:    "single tag",
+			content: `Here is your design: <artifact id="art_001" kind="design.canvas" title="My Canvas" />`,
+			want: []artifactTag{
+				{id: "art_001", kind: "design.canvas", title: "My Canvas", display: ""},
+			},
+		},
+		{
+			name:    "multiple tags",
+			content: `A <artifact id="a1" kind="x" title="X" /> B <artifact id="a2" kind="y" title="Y" />`,
+			want: []artifactTag{
+				{id: "a1", kind: "x", title: "X"},
+				{id: "a2", kind: "y", title: "Y"},
+			},
+		},
+		{
+			name:    "tag with display",
+			content: `<artifact id="art_002" kind="image.png" title="Photo" display="panel" />`,
+			want: []artifactTag{
+				{id: "art_002", kind: "image.png", title: "Photo", display: "panel"},
+			},
+		},
+		{
+			name:    "tag with single quotes",
+			content: `<artifact id='art_003' kind='code.py' title='Script' display='inline' />`,
+			want: []artifactTag{
+				{id: "art_003", kind: "code.py", title: "Script", display: "inline"},
+			},
+		},
+		{
+			name:    "no tags",
+			content: "Just plain text",
+			want:    nil,
+		},
+		{
+			name:    "malformed tag ignored",
+			content: `<artifact id="art_004"> not closed`,
+			want:    nil,
+		},
+		{
+			name:    "missing id ignored",
+			content: `<artifact kind="design.canvas" title="No ID" />`,
+			want:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseArtifactTags(tt.content)
+			if len(got) != len(tt.want) {
+				t.Fatalf("expected %d tags, got %d: %+v", len(tt.want), len(got), got)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("tag %d mismatch: got %+v, want %+v", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestApplyArtifactTagOverrides(t *testing.T) {
+	w := &eventWriter{
+		artifacts: []artifact.Resource{
+			{ID: "art_001", Kind: "unknown", Title: "Old Title", Display: "inline"},
+			{ID: "art_002", Kind: "image.png", Title: "Photo", Display: "inline"},
+		},
+	}
+
+	content := `<artifact id="art_001" kind="design.canvas" title="New Title" display="panel" />`
+	w.applyArtifactTagOverrides(content)
+
+	if w.artifacts[0].Kind != "design.canvas" {
+		t.Fatalf("expected kind=design.canvas, got %s", w.artifacts[0].Kind)
+	}
+	if w.artifacts[0].Title != "New Title" {
+		t.Fatalf("expected title=New Title, got %s", w.artifacts[0].Title)
+	}
+	if w.artifacts[0].Display != "panel" {
+		t.Fatalf("expected display=panel, got %s", w.artifacts[0].Display)
+	}
+
+	// art_002 should remain unchanged
+	if w.artifacts[1].Title != "Photo" {
+		t.Fatalf("expected art_002 title unchanged, got %s", w.artifacts[1].Title)
+	}
+}
+
+func TestApplyArtifactTagOverridesNoArtifacts(t *testing.T) {
+	w := &eventWriter{}
+	// should not panic
+	w.applyArtifactTagOverrides(`<artifact id="art_001" title="X" />`)
+}
+
+func TestApplyArtifactTagOverridesInvalidDisplayIgnored(t *testing.T) {
+	w := &eventWriter{
+		artifacts: []artifact.Resource{
+			{ID: "art_001", Kind: "image.png", Title: "Photo", Display: "inline"},
+		},
+	}
+
+	content := `<artifact id="art_001" display="invalid" />`
+	w.applyArtifactTagOverrides(content)
+
+	if w.artifacts[0].Display != "inline" {
+		t.Fatalf("expected display to remain inline, got %s", w.artifacts[0].Display)
 	}
 }

@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 	"arkloop/services/shared/runkind"
 	"arkloop/services/shared/threadrunstate"
 	"arkloop/services/worker/internal/data"
+	"arkloop/services/worker/internal/adapter"
 	"arkloop/services/worker/internal/events"
 	"arkloop/services/worker/internal/llm"
 	"arkloop/services/worker/internal/queue"
@@ -80,6 +84,12 @@ func NewAgentLoopHandler(
 			personaID = rc.PersonaDefinition.ID
 		}
 
+		// Load adapter configs
+		var adapterEngine *adapter.Engine
+		if adapterConfigs, err := loadAdapterConfigs(ctx); err == nil && len(adapterConfigs) > 0 {
+			adapterEngine = adapter.NewEngine(adapterConfigs)
+		}
+
 		writer := newEventWriter(
 			rc.Pool, rc.Run, rc.TraceID, runLimiterRDB,
 			rc.EventBus, jobQueue,
@@ -96,6 +106,7 @@ func NewAgentLoopHandler(
 			parseOptionalUUID(stringValue(rc.InputJSON["callback_id"])),
 			pendingSubAgentCallbackIDs(rc.PendingSubAgentCallbacks),
 			IsHeartbeatRunContext(rc),
+			adapterEngine,
 		)
 		defer writer.Close(ctx)
 		defer func() {
@@ -321,6 +332,9 @@ type eventWriter struct {
 
 	// artifacts 收集本 Run 中各 tool result 产生的产物，随最终 assistant message 的 metadata 写入。
 	artifacts []artifact.Resource
+
+	// adapterEngine 用于将外部 tool result 转换为 artifact。
+	adapterEngine *adapter.Engine
 }
 
 type intermediateMessage struct {
@@ -364,6 +378,7 @@ func newEventWriter(
 	callbackID *uuid.UUID,
 	pendingCallbackIDs []uuid.UUID,
 	heartbeatRun bool,
+	adapterEngine *adapter.Engine,
 ) *eventWriter {
 	if creditsPerUSD <= 0 {
 		creditsPerUSD = 1000.0
@@ -400,7 +415,31 @@ func newEventWriter(
 		callbackID:                callbackID,
 		pendingCallbackIDs:        append([]uuid.UUID(nil), pendingCallbackIDs...),
 		heartbeatRun:              heartbeatRun,
+		adapterEngine:             adapterEngine,
 	}
+}
+
+// loadAdapterConfigs loads adapter configs from file directory or database.
+func loadAdapterConfigs(ctx context.Context) ([]adapter.Config, error) {
+	var loaders []adapter.Loader
+
+	// File loader
+	adapterDir := os.Getenv("ARKLOOP_ADAPTER_CONFIG_DIR")
+	if adapterDir == "" {
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			adapterDir = filepath.Join(home, ".arkloop", "adapters")
+		}
+	}
+	if adapterDir != "" {
+		loaders = append(loaders, &adapter.FileLoader{Dir: adapterDir})
+	}
+
+	if len(loaders) == 0 {
+		return nil, nil
+	}
+
+	return adapter.NewMultiLoader(loaders...).LoadAll(ctx)
 }
 
 func pendingSubAgentCallbackIDs(callbacks []data.ThreadSubAgentCallbackRecord) []uuid.UUID {
@@ -511,6 +550,7 @@ func (w *eventWriter) insertStreamRemainder(
 		return err
 	}
 	w.logAssistantMessagePersistDebug(ctx, "stream_remainder", assistantDebugCountsFromText(content), 0)
+	w.applyArtifactTagOverrides(content)
 	metadata := map[string]any{"stream_chunk": true}
 	if len(w.artifacts) > 0 {
 		metadata["artifacts"] = w.artifacts
@@ -1062,6 +1102,8 @@ func (w *eventWriter) InsertAssistantMessage(
 	}
 	w.logAssistantMessagePersistDebug(ctx, "final_assistant", assistantDebugCountsFromMessage(message), len(contentJSON))
 
+	w.applyArtifactTagOverrides(content)
+
 	var metadata map[string]any
 	if len(w.artifacts) > 0 {
 		metadata = map[string]any{"artifacts": w.artifacts}
@@ -1264,6 +1306,20 @@ func (w *eventWriter) collectToolResult(dataJSON map[string]any) {
 }
 
 func (w *eventWriter) extractArtifactsFromToolResult(result map[string]any, toolName string) {
+	// 1. Try JSON Adapter conversion first
+	if w.adapterEngine != nil {
+		adapterArtifacts, err := w.adapterEngine.Convert(result, "tool-result", toolName)
+		if err == nil && len(adapterArtifacts) > 0 {
+			runID := w.run.ID.String()
+			for i := range adapterArtifacts {
+				adapterArtifacts[i].Producer.RunID = &runID
+				w.artifacts = append(w.artifacts, adapterArtifacts[i])
+			}
+			return
+		}
+	}
+
+	// 2. Fall back to legacy artifacts array
 	artifactsRaw, ok := result["artifacts"].([]any)
 	if !ok || len(artifactsRaw) == 0 {
 		return
@@ -1312,6 +1368,72 @@ func (w *eventWriter) extractArtifactsFromToolResult(result map[string]any, tool
 				"key": key,
 			},
 		})
+	}
+}
+
+var artifactTagRegex = regexp.MustCompile(`<artifact\s+([^>]*)/>`)
+var artifactAttrRegex = regexp.MustCompile(`(\w+)=["']([^"']+)["']`)
+
+type artifactTag struct {
+	id      string
+	kind    string
+	title   string
+	display string
+}
+
+func parseArtifactTags(content string) []artifactTag {
+	var tags []artifactTag
+	matches := artifactTagRegex.FindAllStringSubmatch(content, -1)
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		attrs := m[1]
+		var tag artifactTag
+		for _, attr := range artifactAttrRegex.FindAllStringSubmatch(attrs, -1) {
+			if len(attr) < 3 {
+				continue
+			}
+			switch attr[1] {
+			case "id":
+				tag.id = attr[2]
+			case "kind":
+				tag.kind = attr[2]
+			case "title":
+				tag.title = attr[2]
+			case "display":
+				tag.display = attr[2]
+			}
+		}
+		if tag.id != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}
+
+func (w *eventWriter) applyArtifactTagOverrides(content string) {
+	if len(w.artifacts) == 0 {
+		return
+	}
+	tags := parseArtifactTags(content)
+	for _, tag := range tags {
+		for i := range w.artifacts {
+			if w.artifacts[i].ID != tag.id {
+				continue
+			}
+			if tag.title != "" {
+				w.artifacts[i].Title = tag.title
+			}
+			if tag.kind != "" {
+				w.artifacts[i].Kind = tag.kind
+				w.artifacts[i].MimeType = &tag.kind
+			}
+			if tag.display == "inline" || tag.display == "panel" {
+				w.artifacts[i].Display = tag.display
+			}
+			break
+		}
 	}
 }
 

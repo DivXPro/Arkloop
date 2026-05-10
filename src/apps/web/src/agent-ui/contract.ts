@@ -205,6 +205,7 @@ export type AgentUIMessage<
 export type AgentMessageMetadata = {
   createdAt: string
   streamId?: string
+  artifacts?: unknown[]
 }
 
 export type AgentMessage = AgentUIMessage<AgentMessageMetadata> & {

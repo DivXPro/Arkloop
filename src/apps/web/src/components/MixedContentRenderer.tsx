@@ -3,25 +3,30 @@ import type { ArtifactResource } from '@arkloop/shared'
 import { parseMixedContent } from '../lib/parseMixedContent'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { InlineArtifactCard } from './InlineArtifactCard'
+import type { ComponentProps } from 'react'
+
+type MarkdownProps = ComponentProps<typeof MarkdownRenderer>
 
 type Props = {
   content: string
   artifacts?: ArtifactResource[]
   onOpenArtifact?: (id: string) => void
-}
+} & Omit<MarkdownProps, 'content'>
 
 export const MixedContentRenderer = memo(function MixedContentRenderer({
   content,
   artifacts,
   onOpenArtifact,
+  ...markdownProps
 }: Props) {
+  const { accessToken } = markdownProps
   const segments = parseMixedContent(content)
 
   return (
     <>
       {segments.map((segment, index) => {
         if (segment.type === 'text') {
-          return <MarkdownRenderer key={`text-${index}`} content={segment.text} />
+          return <MarkdownRenderer key={`text-${index}`} content={segment.text} {...markdownProps} />
         }
 
         const resource = artifacts?.find((a) => a.id === segment.id)
@@ -33,6 +38,7 @@ export const MixedContentRenderer = memo(function MixedContentRenderer({
               resource={resource}
               title={segment.title}
               onClick={onOpenArtifact}
+              accessToken={accessToken}
             />
           )
         }

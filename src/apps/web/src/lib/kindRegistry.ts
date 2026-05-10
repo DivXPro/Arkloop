@@ -54,3 +54,11 @@ registerKindPrefix('code.', code)
 // 数据类：inline 展示可预览的卡片
 const data: KindConfig = { inlineMode: 'card-preview' }
 registerKindPrefix('data.', data)
+
+// 社媒类：专用社媒卡片
+const social: KindConfig = { inlineMode: 'social-card' }
+registerKindPrefix('social.', social)
+
+// 电商类：专用商品卡片
+const ecommerce: KindConfig = { inlineMode: 'product-card' }
+registerKindPrefix('ecommerce.', ecommerce)

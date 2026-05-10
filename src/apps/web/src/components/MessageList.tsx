@@ -5,6 +5,7 @@ import { CopSegmentBlocks } from './CopSegmentBlocks'
 import { TopLevelCopToolBlock } from './TopLevelCopToolBlock'
 import { AssistantActionBar } from './messagebubble/AssistantMessage'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { MixedContentRenderer } from './MixedContentRenderer'
 import { WidgetBlock } from './WidgetBlock'
 import { IncognitoDivider } from './IncognitoDivider'
 import { useLocale } from '../contexts/LocaleContext'
@@ -40,6 +41,23 @@ type LocationState = {
   forkBaseCount?: number
   userEnterMessageId?: string
 } | null
+
+function hasInlineArtifacts(content: string): boolean {
+  return content.includes('<artifact')
+}
+
+function toArtifactResources(artifacts: ArtifactRef[] | undefined) {
+  if (!artifacts) return undefined
+  return artifacts.map((a) => ({
+    id: a.key,
+    kind: a.mime_type || 'unknown',
+    title: a.title || a.filename,
+    display: a.display,
+    producer: { type: 'agent' as const, id: 'unknown' },
+    fetchMode: 'object-blob' as const,
+    descriptor: { key: a.key },
+  }))
+}
 
 export const MessageList = memo(function MessageList({
   lastTurnRef,
@@ -244,22 +262,45 @@ export const MessageList = memo(function MessageList({
               )}
             {historicalSegments.map((seg, si) =>
               seg.type === 'text' ? (
-                <MarkdownRenderer
-                  key={`${msg.id}-at-${si}`}
-                  content={seg.content}
-                  webSources={resolvedSources}
-                  artifacts={msgMeta?.artifacts}
-                  accessToken={accessToken}
-                  runId={msg.streamId ?? undefined}
-                  workFolder={workFolder}
-                  onOpenDocument={openDocumentPanel}
-                  onOpenResource={openResourcePanel}
-                  typography={isWorkMode ? 'work' : 'default'}
-                  trimTrailingMargin={
-                    historicalSegments[si + 1] == null ||
-                    historicalSegments[si + 1]?.type === 'cop'
-                  }
-                />
+                hasInlineArtifacts(seg.content) ? (
+                  <MixedContentRenderer
+                    key={`${msg.id}-at-${si}`}
+                    content={seg.content}
+                    artifacts={toArtifactResources(msgMeta?.artifacts)}
+                    onOpenArtifact={(id) => {
+                      const artifact = msgMeta?.artifacts?.find((a) => a.key === id)
+                      if (artifact) openDocumentPanel(artifact)
+                    }}
+                    webSources={resolvedSources}
+                    accessToken={accessToken}
+                    runId={msg.streamId ?? undefined}
+                    workFolder={workFolder}
+                    onOpenDocument={openDocumentPanel}
+                    onOpenResource={openResourcePanel}
+                    typography={isWorkMode ? 'work' : 'default'}
+                    trimTrailingMargin={
+                      historicalSegments[si + 1] == null ||
+                      historicalSegments[si + 1]?.type === 'cop'
+                    }
+                  />
+                ) : (
+                  <MarkdownRenderer
+                    key={`${msg.id}-at-${si}`}
+                    content={seg.content}
+                    webSources={resolvedSources}
+                    artifacts={msgMeta?.artifacts}
+                    accessToken={accessToken}
+                    runId={msg.streamId ?? undefined}
+                    workFolder={workFolder}
+                    onOpenDocument={openDocumentPanel}
+                    onOpenResource={openResourcePanel}
+                    typography={isWorkMode ? 'work' : 'default'}
+                    trimTrailingMargin={
+                      historicalSegments[si + 1] == null ||
+                      historicalSegments[si + 1]?.type === 'cop'
+                    }
+                  />
+                )
               ) : (
                 (() => {
                   const timelinePools = {

@@ -64,7 +64,7 @@ export interface ArtifactContext {
  * viewer 指定打开时使用的 viewer（可选）
  */
 export interface KindConfig {
-  inlineMode: 'image' | 'iframe' | 'card-preview' | 'link'
+  inlineMode: 'image' | 'iframe' | 'card-preview' | 'social-card' | 'product-card' | 'link'
   viewer?: string
 }
 

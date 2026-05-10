@@ -136,6 +136,31 @@ function toAgentMessage(message: MessageResponse): AgentMessage {
     }]
   }) ?? (message.content ? [{ type: 'text' as const, text: message.content, state: 'done' as const }] : [])
 
+  const metadata: AgentMessage['metadata'] = {
+    createdAt: message.created_at,
+    streamId: message.run_id,
+  }
+
+  if (message.artifacts && message.artifacts.length > 0) {
+    metadata.artifacts = message.artifacts
+      .filter((a): a is Record<string, unknown> => a != null && typeof a === 'object')
+      .map((a) => {
+        const id = typeof a.id === 'string' ? a.id : ''
+        const title = typeof a.title === 'string' ? a.title : undefined
+        const kind = typeof a.kind === 'string' ? a.kind : ''
+        const display = a.display === 'inline' || a.display === 'panel' ? a.display : undefined
+        return {
+          key: id,
+          filename: title || id,
+          size: 0,
+          mime_type: kind,
+          title: title || undefined,
+          display,
+        }
+      })
+      .filter((a) => a.key !== '')
+  }
+
   return {
     id: message.id,
     role: message.role === 'system' || message.role === 'user' || message.role === 'assistant'
@@ -145,10 +170,7 @@ function toAgentMessage(message: MessageResponse): AgentMessage {
     contentJson,
     createdAt: message.created_at,
     streamId: message.run_id,
-    metadata: {
-      createdAt: message.created_at,
-      streamId: message.run_id,
-    },
+    metadata,
     parts,
   }
 }
