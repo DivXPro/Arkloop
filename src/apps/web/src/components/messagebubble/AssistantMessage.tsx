@@ -272,6 +272,7 @@ export function AssistantMessage({
                 id: a.key,
                 kind: a.mime_type || 'unknown',
                 title: a.title || a.filename,
+                display: a.display,
                 producer: { type: 'agent', id: 'unknown' },
                 fetchMode: 'object-blob',
                 descriptor: { key: a.key },
