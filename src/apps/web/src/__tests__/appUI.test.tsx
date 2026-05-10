@@ -201,7 +201,7 @@ describe('DesktopTitleBar update entry', () => {
       root!.render(
         <LocaleProvider>
           <DesktopTitleBar
-            sidebarCollapsed={false}
+            sidebarHidden={false}
             onToggleSidebar={() => {}}
             appMode="chat"
             onSetAppMode={() => {}}
