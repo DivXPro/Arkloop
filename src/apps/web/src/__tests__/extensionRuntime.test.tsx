@@ -3,30 +3,30 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { PluginRuntimeProvider, usePluginRuntime } from '../plugins/runtime'
+import { ExtensionRuntimeProvider, useExtensionRuntime } from '../extensions/extension-runtime'
 
 vi.mock('../storage', async () => {
   const actual = await vi.importActual<typeof import('../storage')>('../storage')
   return {
     ...actual,
-    readPluginRuntimeState: vi.fn(() => ({
-      lastPluginId: 'open-design',
-      presentationByPluginId: { 'open-design': 'route' as const },
+    readExtensionRuntimeState: vi.fn(() => ({
+      lastExtensionId: 'open-design',
+      presentationByExtensionId: { 'open-design': 'route' as const },
     })),
-    writePluginRuntimeState: vi.fn(),
+    writeExtensionRuntimeState: vi.fn(),
   }
 })
 
 function Probe() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { activePluginId, openPlugin } = usePluginRuntime()
+  const { activeExtensionId, openExtension } = useExtensionRuntime()
 
   return (
     <div>
-      <div data-testid="active">{activePluginId ?? 'none'}</div>
+      <div data-testid="active">{activeExtensionId ?? 'none'}</div>
       <div data-testid="path">{location.pathname}</div>
-      <button type="button" onClick={() => void openPlugin('open-design')}>
+      <button type="button" onClick={() => void openExtension('open-design')}>
         open-design
       </button>
       <button type="button" onClick={() => navigate('/t/thread-2')}>
@@ -36,7 +36,7 @@ function Probe() {
   )
 }
 
-describe('PluginRuntimeProvider', () => {
+describe('ExtensionRuntimeProvider', () => {
   let container: HTMLDivElement
   let root: ReturnType<typeof createRoot>
   const actEnvironment = globalThis as typeof globalThis & {
@@ -62,13 +62,13 @@ describe('PluginRuntimeProvider', () => {
     }
   })
 
-  it('opens a plugin route and tracks the active plugin id', async () => {
+  it('opens a extension route and tracks the active extension id', async () => {
     await act(async () => {
       root.render(
         <MemoryRouter initialEntries={['/']}>
-          <PluginRuntimeProvider>
+          <ExtensionRuntimeProvider>
             <Probe />
-          </PluginRuntimeProvider>
+          </ExtensionRuntimeProvider>
         </MemoryRouter>,
       )
       await Promise.resolve()
@@ -80,16 +80,16 @@ describe('PluginRuntimeProvider', () => {
     })
 
     expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('open-design')
-    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/plugins/open-design')
+    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/extensions/open-design')
   })
 
-  it('does not restore an active plugin highlight on cold start outside plugin context', async () => {
+  it('does not restore an active extension highlight on cold start outside extension context', async () => {
     await act(async () => {
       root.render(
         <MemoryRouter initialEntries={['/t/thread-1']}>
-          <PluginRuntimeProvider>
+          <ExtensionRuntimeProvider>
             <Probe />
-          </PluginRuntimeProvider>
+          </ExtensionRuntimeProvider>
         </MemoryRouter>,
       )
       await Promise.resolve()
@@ -99,13 +99,13 @@ describe('PluginRuntimeProvider', () => {
     expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('none')
   })
 
-  it('clears the active plugin when leaving plugin mode for a thread route', async () => {
+  it('clears the active extension when leaving extension mode for a thread route', async () => {
     await act(async () => {
       root.render(
         <MemoryRouter initialEntries={['/t/thread-1']}>
-          <PluginRuntimeProvider>
+          <ExtensionRuntimeProvider>
             <Probe />
-          </PluginRuntimeProvider>
+          </ExtensionRuntimeProvider>
         </MemoryRouter>,
       )
       await Promise.resolve()

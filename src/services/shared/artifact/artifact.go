@@ -11,7 +11,7 @@ type Producer struct {
 	Type     string  `json:"type"`
 	ID       string  `json:"id"`
 	RunID    *string `json:"runId,omitempty"`
-	PluginID *string `json:"pluginId,omitempty"`
+	ExtensionID *string `json:"extensionId,omitempty"`
 }
 
 // Resource 完整资源描述，随消息传递

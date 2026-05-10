@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { OpenDesignPluginPage } from '../plugins/builtin/OpenDesignPluginPage'
+import { OpenDesignExtensionPage } from '../extensions/builtin/OpenDesignExtensionPage'
 
 const desktopMock = vi.hoisted(() => {
   const managedAppsApi = {
@@ -34,7 +34,7 @@ vi.mock('@arkloop/shared/desktop', () => ({
   getDesktopApi: desktopMock.getDesktopApi,
 }))
 
-describe('OpenDesignPluginPage', () => {
+describe('OpenDesignExtensionPage', () => {
   let container: HTMLDivElement
   let root: ReturnType<typeof createRoot>
   const actEnvironment = globalThis as typeof globalThis & {
@@ -79,11 +79,11 @@ describe('OpenDesignPluginPage', () => {
     )
 
     await act(async () => {
-      root.render(<OpenDesignPluginPage />)
+      root.render(<OpenDesignExtensionPage />)
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="open-design-plugin-loading"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="open-design-extension-loading"]')).not.toBeNull()
 
     await act(async () => {
       resolveEnsureStarted?.({
@@ -99,7 +99,7 @@ describe('OpenDesignPluginPage', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="open-design-plugin-ready"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="open-design-extension-ready"]')).not.toBeNull()
     expect(desktopMock.managedAppsApi.ensureStarted).toHaveBeenCalledWith('open-design')
     expect(desktopMock.managedAppsApi.showMainArea).toHaveBeenCalledWith(
       'open-design',
@@ -110,7 +110,7 @@ describe('OpenDesignPluginPage', () => {
 
   it('hides main area on unmount', async () => {
     await act(async () => {
-      root.render(<OpenDesignPluginPage />)
+      root.render(<OpenDesignExtensionPage />)
       await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()
@@ -129,13 +129,13 @@ describe('OpenDesignPluginPage', () => {
     )
 
     await act(async () => {
-      root.render(<OpenDesignPluginPage />)
+      root.render(<OpenDesignExtensionPage />)
       await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="open-design-plugin-error"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="open-design-extension-error"]')).not.toBeNull()
     expect(container.textContent).toContain('install incomplete')
 
     // Retry should call ensureStarted again
@@ -159,6 +159,6 @@ describe('OpenDesignPluginPage', () => {
     })
 
     expect(desktopMock.managedAppsApi.ensureStarted).toHaveBeenCalledTimes(2)
-    expect(container.querySelector('[data-testid="open-design-plugin-ready"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="open-design-extension-ready"]')).not.toBeNull()
   })
 })

@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { PluginRuntimeProvider } from '../plugins/runtime'
-import { PluginSidebarSection } from '../plugins/PluginSidebarSection'
+import { ExtensionRuntimeProvider } from '../extensions/extension-runtime'
+import { ExtensionSidebarSection } from '../extensions/ExtensionSidebarSection'
 
 const desktopMock = vi.hoisted(() => ({
   isDesktop: vi.fn(() => true),
@@ -19,7 +19,7 @@ function Probe() {
   return <div data-testid="path">{location.pathname}</div>
 }
 
-describe('PluginSidebarSection', () => {
+describe('ExtensionSidebarSection', () => {
   let container: HTMLDivElement
   let root: ReturnType<typeof createRoot>
   const actEnvironment = globalThis as typeof globalThis & {
@@ -48,10 +48,10 @@ describe('PluginSidebarSection', () => {
     await act(async () => {
       root.render(
         <MemoryRouter initialEntries={['/t/thread-1']}>
-          <PluginRuntimeProvider>
-            <PluginSidebarSection />
+          <ExtensionRuntimeProvider>
+            <ExtensionSidebarSection />
             <Probe />
-          </PluginRuntimeProvider>
+          </ExtensionRuntimeProvider>
         </MemoryRouter>,
       )
       await Promise.resolve()
@@ -61,11 +61,11 @@ describe('PluginSidebarSection', () => {
 
     await act(async () => {
       container
-        .querySelector('[data-testid="plugin-entry-open-design"]')
+        .querySelector('[data-testid="extension-entry-open-design"]')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/plugins/open-design')
+    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/extensions/open-design')
   })
 })

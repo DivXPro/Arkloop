@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LocaleProvider } from '../contexts/LocaleContext'
 import { BrowserTabsProvider } from '../contexts/browser-tabs'
-import { PluginBrowserSessionProvider } from '../plugins/browser-session'
-import { PluginHostPage } from '../plugins/PluginHostPage'
-import { PluginRuntimeProvider } from '../plugins/runtime'
+import { ExtensionBrowserSessionProvider } from '../extensions/extension-browser-session'
+import { ExtensionHostPage } from '../extensions/ExtensionHostPage'
+import { ExtensionRuntimeProvider } from '../extensions/extension-runtime'
 
 const desktopMock = vi.hoisted(() => {
   const managedAppsApi = {
@@ -40,7 +40,7 @@ vi.mock('@arkloop/shared/desktop', () => ({
   getDesktopApi: desktopMock.getDesktopApi,
 }))
 
-describe('PluginHostPage', () => {
+describe('ExtensionHostPage', () => {
   let container: HTMLDivElement
   let root: ReturnType<typeof createRoot>
   const actEnvironment = globalThis as typeof globalThis & {
@@ -66,19 +66,19 @@ describe('PluginHostPage', () => {
     }
   })
 
-  it('renders open-design plugin page through route surface', async () => {
+  it('renders open-design extension page through route surface', async () => {
     await act(async () => {
       root.render(
-        <MemoryRouter initialEntries={['/plugins/open-design']}>
+        <MemoryRouter initialEntries={['/extensions/open-design']}>
           <LocaleProvider>
             <BrowserTabsProvider>
-              <PluginRuntimeProvider>
-                <PluginBrowserSessionProvider>
+              <ExtensionRuntimeProvider>
+                <ExtensionBrowserSessionProvider>
                   <Routes>
-                    <Route path="/plugins/:pluginId" element={<PluginHostPage />} />
+                    <Route path="/extensions/:extensionId" element={<ExtensionHostPage />} />
                   </Routes>
-                </PluginBrowserSessionProvider>
-              </PluginRuntimeProvider>
+                </ExtensionBrowserSessionProvider>
+              </ExtensionRuntimeProvider>
             </BrowserTabsProvider>
           </LocaleProvider>
         </MemoryRouter>,
@@ -87,7 +87,7 @@ describe('PluginHostPage', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="open-design-plugin-ready"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="open-design-extension-ready"]')).not.toBeNull()
     expect(desktopMock.managedAppsApi.ensureStarted).toHaveBeenCalledWith('open-design')
   })
 })

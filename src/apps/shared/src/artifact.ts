@@ -10,10 +10,10 @@ export interface ArtifactHandle {
  * Artifact 来源信息
  */
 export interface ArtifactProducer {
-  type: 'agent' | 'plugin' | 'input-library' | 'import'
+  type: 'agent' | 'extension' | 'input-library' | 'import'
   id: string
   runId?: string
-  pluginId?: string
+  extensionId?: string
 }
 
 /**
@@ -28,7 +28,7 @@ export interface ArtifactResource {
   labels?: string[]
   mimeType?: string
   producer: ArtifactProducer
-  fetchMode: 'object-blob' | 'api-resource' | 'external-url' | 'plugin-resolver' | 'inline-json'
+  fetchMode: 'object-blob' | 'api-resource' | 'external-url' | 'extension-resolver' | 'inline-json'
   descriptor: Record<string, unknown>
   capabilities?: string[]
   display?: 'inline' | 'panel'
@@ -38,7 +38,7 @@ export interface ArtifactResource {
  * 插件 Viewer 注册信息
  */
 export interface ArtifactViewerRegistration {
-  pluginId: string
+  extensionId: string
   supports: string[]
   openMode: 'route' | 'embedded-browser' | 'hybrid' | 'panel'
   priority: number

@@ -2,24 +2,24 @@ import type { ReactElement } from 'react'
 import { useEffect } from 'react'
 
 import { useBrowserTabs } from '../contexts/browser-tabs'
-import type { PluginDefinition, PluginPresentation } from './types'
-import { usePluginRuntime } from './runtime'
+import type { ExtensionDefinition, ExtensionPresentation } from './types'
+import { useExtensionRuntime } from './extension-runtime'
 
-const PRESENTATION_LABELS: Record<PluginPresentation, string> = {
+const PRESENTATION_LABELS: Record<ExtensionPresentation, string> = {
   route: 'Page',
   'embedded-browser': 'Browser',
   hybrid: 'Hybrid',
 }
 
-export function PluginWorkspaceShell({
-  plugin,
+export function ExtensionWorkspaceShell({
+  extension,
   presentation,
 }: {
-  plugin: PluginDefinition
-  presentation: PluginPresentation
+  extension: ExtensionDefinition
+  presentation: ExtensionPresentation
 }) {
   const { closeBrowserPanel } = useBrowserTabs()
-  const { setPresentationForPlugin } = usePluginRuntime()
+  const { setPresentationForExtension } = useExtensionRuntime()
 
   useEffect(() => {
     if (presentation === 'route') {
@@ -27,9 +27,9 @@ export function PluginWorkspaceShell({
     }
   }, [closeBrowserPanel, presentation])
 
-  const Component = plugin.surfaces.mount
+  const Component = extension.surfaces.mount
   const supportsPresentationSwitch =
-    plugin.presentation.supported.length > 1
+    extension.presentation.supported.length > 1
 
   const content: ReactElement | null = (
     <div className="min-h-0 flex-1 overflow-auto">
@@ -40,15 +40,15 @@ export function PluginWorkspaceShell({
   return (
     <div
       className="flex h-full min-h-0 w-full min-w-0 flex-col"
-      data-testid="plugin-workspace-shell"
+      data-testid="extension-workspace-shell"
     >
       <div
         className="flex h-10 shrink-0 items-center justify-between gap-3 px-3 text-xs font-medium text-(--c-text-primary)"
-        data-testid="plugin-workspace-header"
+        data-testid="extension-workspace-header"
         style={{ borderBottom: '0.5px solid var(--c-border-subtle)' }}
       >
         <div className="flex min-w-0 items-center gap-2">
-          <div className="min-w-0 truncate">{plugin.title}</div>
+          <div className="min-w-0 truncate">{extension.title}</div>
         </div>
         <div className="flex items-center gap-2">
           {supportsPresentationSwitch ? (
@@ -56,14 +56,14 @@ export function PluginWorkspaceShell({
               className="flex items-center gap-1 rounded-full p-0.5"
               style={{ backgroundColor: 'var(--c-bg-sub)' }}
             >
-              {plugin.presentation.supported.map((mode) => (
+              {extension.presentation.supported.map((mode) => (
                 <button
                   key={mode}
                   type="button"
                   aria-pressed={mode === presentation}
                   className="rounded-full px-2 py-1 text-[11px] transition-colors"
-                  data-testid={`plugin-presentation-button-${mode}`}
-                  onClick={() => setPresentationForPlugin(plugin.id, mode)}
+                  data-testid={`extension-presentation-button-${mode}`}
+                  onClick={() => setPresentationForExtension(extension.id, mode)}
                   style={
                     mode === presentation
                       ? {
