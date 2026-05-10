@@ -30,11 +30,9 @@ export function createManagedAppRuntimeManager(deps: {
   const records = new Map<ManagedAppId, ManagedAppState>()
 
   async function ensureStarted(appId: ManagedAppId): Promise<ManagedAppState> {
-    const existing = records.get(appId)
-    if (existing?.status === 'running') {
-      return existing
-    }
-
+    // Always call launch so it can verify the process is still alive.
+    // launch is idempotent: it returns the existing pid when the process
+    // is running and spawns a new one only when necessary.
     const launched = await deps.launch(appId)
 
     try {

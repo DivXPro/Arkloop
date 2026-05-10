@@ -206,11 +206,24 @@ async function launchManagedApp(appId: ManagedAppId): Promise<{ pid: number }> {
 
   const existing = managedAppProcesses.get(appId)
   if (existing?.pid && existing.exitCode === null) {
-    return { pid: existing.pid }
+    if (isProcessAlive(existing.pid)) {
+      return { pid: existing.pid }
+    }
+    managedAppProcesses.delete(appId)
   }
 
   const installPaths = getOpenDesignInstallPaths()
   validateOpenDesignInstall(installPaths)
+
+  // Remove stale ready file from a previous session so pollManagedAppReady
+  // doesn't accidentally read an old port before the new process writes it.
+  try {
+    if (fs.existsSync(installPaths.readyFile)) {
+      fs.unlinkSync(installPaths.readyFile)
+    }
+  } catch {
+    // ignore
+  }
 
   const child = spawn(installPaths.nodeBinary, [installPaths.entryScript], {
     cwd: installPaths.runtimeRoot,
