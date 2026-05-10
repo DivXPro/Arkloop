@@ -72,7 +72,7 @@ describe('InlineArtifactCard', () => {
       />,
     )
 
-    expect(html).toContain('/v1/artifacts/test/photo.png/preview')
+    expect(html).toContain('/v1/artifacts/test/photo.png')
     expect(html).toContain('alt="Photo"')
   })
 

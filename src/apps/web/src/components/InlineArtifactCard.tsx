@@ -81,7 +81,7 @@ export function InlineArtifactCard({ resource, title, onClick }: Props) {
       {showImagePreview && (
         <div className="artifact-preview" style={{ marginTop: '8px' }}>
           <img
-            src={`/v1/artifacts/${resource.descriptor.key as string}/preview`}
+            src={`/v1/artifacts/${resource.descriptor.key as string}`}
             alt={displayTitle}
             style={{
               maxWidth: '100%',
