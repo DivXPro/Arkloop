@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"regexp"
 	"strings"
 	"time"
 
@@ -511,6 +512,7 @@ func (w *eventWriter) insertStreamRemainder(
 		return err
 	}
 	w.logAssistantMessagePersistDebug(ctx, "stream_remainder", assistantDebugCountsFromText(content), 0)
+	w.applyArtifactTagOverrides(content)
 	metadata := map[string]any{"stream_chunk": true}
 	if len(w.artifacts) > 0 {
 		metadata["artifacts"] = w.artifacts
@@ -1062,6 +1064,8 @@ func (w *eventWriter) InsertAssistantMessage(
 	}
 	w.logAssistantMessagePersistDebug(ctx, "final_assistant", assistantDebugCountsFromMessage(message), len(contentJSON))
 
+	w.applyArtifactTagOverrides(content)
+
 	var metadata map[string]any
 	if len(w.artifacts) > 0 {
 		metadata = map[string]any{"artifacts": w.artifacts}
@@ -1312,6 +1316,72 @@ func (w *eventWriter) extractArtifactsFromToolResult(result map[string]any, tool
 				"key": key,
 			},
 		})
+	}
+}
+
+var artifactTagRegex = regexp.MustCompile(`<artifact\s+([^>]*)/>`)
+var artifactAttrRegex = regexp.MustCompile(`(\w+)=["']([^"']+)["']`)
+
+type artifactTag struct {
+	id      string
+	kind    string
+	title   string
+	display string
+}
+
+func parseArtifactTags(content string) []artifactTag {
+	var tags []artifactTag
+	matches := artifactTagRegex.FindAllStringSubmatch(content, -1)
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		attrs := m[1]
+		var tag artifactTag
+		for _, attr := range artifactAttrRegex.FindAllStringSubmatch(attrs, -1) {
+			if len(attr) < 3 {
+				continue
+			}
+			switch attr[1] {
+			case "id":
+				tag.id = attr[2]
+			case "kind":
+				tag.kind = attr[2]
+			case "title":
+				tag.title = attr[2]
+			case "display":
+				tag.display = attr[2]
+			}
+		}
+		if tag.id != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}
+
+func (w *eventWriter) applyArtifactTagOverrides(content string) {
+	if len(w.artifacts) == 0 {
+		return
+	}
+	tags := parseArtifactTags(content)
+	for _, tag := range tags {
+		for i := range w.artifacts {
+			if w.artifacts[i].ID != tag.id {
+				continue
+			}
+			if tag.title != "" {
+				w.artifacts[i].Title = tag.title
+			}
+			if tag.kind != "" {
+				w.artifacts[i].Kind = tag.kind
+				w.artifacts[i].MimeType = &tag.kind
+			}
+			if tag.display == "inline" || tag.display == "panel" {
+				w.artifacts[i].Display = tag.display
+			}
+			break
+		}
 	}
 }
 
