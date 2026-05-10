@@ -12,6 +12,7 @@ import {
 } from './CopTimeline'
 import { CopTimelineLocalExpansionProvider } from './cop-timeline/ToolRows'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { MixedContentRenderer } from './MixedContentRenderer'
 import { recordPerfCount, recordPerfValue } from '../perfDebug'
 import { noteShowWidgetStatus } from '../streamDebug'
 import { useTypewriter } from '../hooks/useTypewriter'
@@ -403,24 +404,55 @@ const LiveRunPane = memo(function LiveRunPane({
               si !== lastSegIdx
 
             return seg.type === 'text' ? (
-              <LiveTurnMarkdown
-                key={`live-at-${si}`}
-                content={seg.content}
-                typewriterDone={mdTypewriterDone}
-                streamSegmentId={!mdTypewriterDone ? activeSegmentId : null}
-                webSources={currentRunSources.length > 0 ? currentRunSources : undefined}
-                artifacts={currentRunArtifacts.length > 0 ? currentRunArtifacts : undefined}
-                accessToken={accessToken}
-                runId={activeRunId ?? undefined}
-                workFolder={workFolder}
-                onOpenDocument={onOpenDocument}
-                onOpenResource={onOpenResource}
-                typography={isWorkMode ? 'work' : 'default'}
-                trimTrailingMargin={
-                  liveSegments[si + 1] == null ||
-                  liveSegments[si + 1]?.type === 'cop'
-                }
-              />
+              seg.content.includes('<artifact') ? (
+                <MixedContentRenderer
+                  key={`live-at-${si}`}
+                  content={seg.content}
+                  artifacts={currentRunArtifacts.map((a) => ({
+                    id: a.key,
+                    kind: a.mime_type || 'unknown',
+                    title: a.title || a.filename,
+                    display: a.display,
+                    producer: { type: 'agent' as const, id: 'unknown' },
+                    fetchMode: 'object-blob' as const,
+                    descriptor: { key: a.key },
+                  }))}
+                  onOpenArtifact={(id) => {
+                    const artifact = currentRunArtifacts.find((a) => a.key === id)
+                    if (artifact && onOpenDocument) onOpenDocument(artifact)
+                  }}
+                  webSources={currentRunSources.length > 0 ? currentRunSources : undefined}
+                  accessToken={accessToken}
+                  runId={activeRunId ?? undefined}
+                  workFolder={workFolder}
+                  onOpenDocument={onOpenDocument}
+                  onOpenResource={onOpenResource}
+                  typography={isWorkMode ? 'work' : 'default'}
+                  trimTrailingMargin={
+                    liveSegments[si + 1] == null ||
+                    liveSegments[si + 1]?.type === 'cop'
+                  }
+                />
+              ) : (
+                <LiveTurnMarkdown
+                  key={`live-at-${si}`}
+                  content={seg.content}
+                  typewriterDone={mdTypewriterDone}
+                  streamSegmentId={!mdTypewriterDone ? activeSegmentId : null}
+                  webSources={currentRunSources.length > 0 ? currentRunSources : undefined}
+                  artifacts={currentRunArtifacts.length > 0 ? currentRunArtifacts : undefined}
+                  accessToken={accessToken}
+                  runId={activeRunId ?? undefined}
+                  workFolder={workFolder}
+                  onOpenDocument={onOpenDocument}
+                  onOpenResource={onOpenResource}
+                  typography={isWorkMode ? 'work' : 'default'}
+                  trimTrailingMargin={
+                    liveSegments[si + 1] == null ||
+                    liveSegments[si + 1]?.type === 'cop'
+                  }
+                />
+              )
             ) : (
               renderLiveCopSegment(seg, si, `live-acw-${si}`)
             )
