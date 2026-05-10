@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ArtifactResource } from '@arkloop/shared'
 import { getKindConfig } from '../lib/kindRegistry'
+import { GenericCard, SocialCard, ProductCard } from './artifact-cards'
 
 type Props = {
   resource: ArtifactResource
@@ -19,14 +20,25 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
   // display 由 artifact 数据定义（'inline' | 'panel'），缺省为 'inline'
   const display = resource.display || 'inline'
   // panel 模式下只展示紧凑卡片，不展开 inline 预览
-  const showImagePreview = display === 'inline' && isObjectBlob && kindConfig.inlineMode === 'image' && !imageError
-  const showIframePreview = display === 'inline' && isObjectBlob && kindConfig.inlineMode === 'iframe'
-  const isLinkMode = kindConfig.inlineMode === 'link'
-
   const artifactKey = resource.descriptor?.key as string | undefined
-  const iframeSrc = artifactKey ? `/v1/artifacts/${artifactKey}` : undefined
+  const viewerUrl = resource.descriptor?.viewerUrl as string | undefined
+  const externalUrl = resource.descriptor?.url as string | undefined
+  const iframeSrc = viewerUrl || (artifactKey ? `/v1/artifacts/${artifactKey}` : undefined)
+
+  const showImagePreview = display === 'inline' && isObjectBlob && kindConfig.inlineMode === 'image' && !imageError
+  const hasExternalViewer = !!viewerUrl || (isExternalUrl && !!externalUrl)
+  const showIframePreview = display === 'inline' && (isObjectBlob || hasExternalViewer) && kindConfig.inlineMode === 'iframe'
+  const isLinkMode = kindConfig.inlineMode === 'link'
+  const isCardPreview = kindConfig.inlineMode === 'card-preview'
+  const isSocialCard = kindConfig.inlineMode === 'social-card'
+  const isProductCard = kindConfig.inlineMode === 'product-card'
 
   const handleOpenPanel = () => {
+    // 如果存在外部链接，直接跳转而不是打开 Panel
+    if (externalUrl) {
+      window.open(externalUrl, '_blank', 'noopener,noreferrer')
+      return
+    }
     onClick?.(resource.id)
   }
 
@@ -60,14 +72,14 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
         e.currentTarget.style.background = 'var(--c-bg-sub)'
       }}
     >
-      {/* 标题行：可点击打开 Panel */}
+      {/* 标题行：可点击打开 Panel 或外部链接 */}
       <div
         className="artifact-row"
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          cursor: onClick ? 'pointer' : 'default',
+          cursor: onClick || externalUrl ? 'pointer' : 'default',
         }}
         onClick={handleOpenPanel}
       >
@@ -78,10 +90,10 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
           className="artifact-title"
           style={{
             flex: 1,
-            fontWeight: isLinkMode ? 400 : 500,
-            color: isLinkMode ? 'var(--c-link)' : 'var(--c-text-primary)',
+            fontWeight: isLinkMode || externalUrl ? 400 : 500,
+            color: isLinkMode || externalUrl ? 'var(--c-link)' : 'var(--c-text-primary)',
             fontSize: '14px',
-            textDecoration: isLinkMode ? 'underline' : 'none',
+            textDecoration: isLinkMode || externalUrl ? 'underline' : 'none',
             textUnderlineOffset: '2px',
             minWidth: 0,
             overflow: 'hidden',
@@ -91,7 +103,7 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
         >
           {displayTitle}
         </span>
-        {isLinkMode && isExternalUrl && (
+        {(isLinkMode && isExternalUrl || externalUrl) && (
           <span style={{ fontSize: '13px', color: 'var(--c-text-muted)', flexShrink: 0 }}>↗</span>
         )}
         <span
@@ -172,6 +184,17 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
           />
         </div>
       )}
+
+      {/* 卡片模板分发 */}
+      {isSocialCard && display === 'inline' && (
+        <SocialCard descriptor={resource.descriptor} summary={resource.summary} onClick={stopPropagation} />
+      )}
+      {isProductCard && display === 'inline' && (
+        <ProductCard descriptor={resource.descriptor} summary={resource.summary} onClick={stopPropagation} />
+      )}
+      {isCardPreview && display === 'inline' && (
+        <GenericCard descriptor={resource.descriptor} summary={resource.summary} onClick={stopPropagation} />
+      )}
     </div>
   )
 }
@@ -182,5 +205,7 @@ function kindIcon(kind: string): string {
   if (kind.startsWith('document.')) return '📄'
   if (kind.startsWith('code.')) return '💻'
   if (kind.startsWith('data.')) return '📊'
+  if (kind.startsWith('social.')) return '💬'
+  if (kind.startsWith('ecommerce.')) return '🛒'
   return '📦'
 }
