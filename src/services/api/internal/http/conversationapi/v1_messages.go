@@ -201,14 +201,19 @@ func toMessageResponse(message data.Message) messageResponse {
 		createdByUserID = &value
 	}
 	var runID *string
+	var artifactsRaw json.RawMessage
 	if len(message.MetadataJSON) > 0 {
 		var metadata struct {
-			RunID string `json:"run_id"`
+			RunID     string          `json:"run_id"`
+			Artifacts json.RawMessage `json:"artifacts"`
 		}
 		if err := json.Unmarshal(message.MetadataJSON, &metadata); err == nil {
 			metadata.RunID = strings.TrimSpace(metadata.RunID)
 			if metadata.RunID != "" {
 				runID = &metadata.RunID
+			}
+			if len(metadata.Artifacts) > 0 {
+				artifactsRaw = metadata.Artifacts
 			}
 		}
 	}
@@ -222,6 +227,7 @@ func toMessageResponse(message data.Message) messageResponse {
 		Role:            message.Role,
 		Content:         message.Content,
 		ContentJSON:     message.ContentJSON,
+		Artifacts:       artifactsRaw,
 		CreatedAt:       message.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }

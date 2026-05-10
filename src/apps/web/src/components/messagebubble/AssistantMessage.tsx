@@ -4,6 +4,7 @@ import type { AgentMessage } from '../../agent-ui'
 import type { WebSource, ArtifactRef, BrowserActionRef, WidgetRef } from '../../storage'
 import { WidgetBlock } from '../WidgetBlock'
 import { MarkdownRenderer } from '../MarkdownRenderer'
+import { MixedContentRenderer } from '../MixedContentRenderer'
 import { recordPerfCount, recordPerfValue } from '../../perfDebug'
 import { BrowserScreenshotCard } from '../BrowserScreenshotCard'
 import type { ArtifactAction } from '../ArtifactIframe'
@@ -41,6 +42,10 @@ type Props = {
   isLast?: boolean
   isWorkMode?: boolean
   suppressActionBar?: boolean
+}
+
+function hasInlineArtifacts(content: string): boolean {
+  return content.includes('<artifact')
 }
 
 function renderBrowserScreenshots(browserActions?: BrowserActionRef[], accessToken?: string) {
@@ -260,19 +265,39 @@ export function AssistantMessage({
       <div style={{ maxWidth: isWorkMode ? undefined : '663px' }}>
         {renderBrowserScreenshots(browserActions, accessToken)}
         <div ref={contentRef}>
-          <MarkdownRenderer
-            content={displayedAssistantMd}
-            streaming={streamMarkdown}
-            webSources={webSources}
-            artifacts={artifacts}
-            accessToken={accessToken}
-            runId={message.streamId}
-            workFolder={workFolder}
-            onOpenDocument={onOpenDocument}
-            onOpenResource={onOpenResource}
-            typography={isWorkMode ? 'work' : 'default'}
-            trimTrailingMargin
-          />
+          {hasInlineArtifacts(displayedAssistantMd) ? (
+            <MixedContentRenderer
+              content={displayedAssistantMd}
+              artifacts={artifacts?.map((a) => ({
+                id: a.key,
+                kind: a.mime_type || 'unknown',
+                title: a.title || a.filename,
+                producer: { type: 'agent', id: 'unknown' },
+                fetchMode: 'object-blob',
+                descriptor: { key: a.key },
+              }))}
+              onOpenArtifact={(id) => {
+                const artifact = artifacts?.find((a) => a.key === id)
+                if (artifact && onOpenDocument) {
+                  onOpenDocument(artifact)
+                }
+              }}
+            />
+          ) : (
+            <MarkdownRenderer
+              content={displayedAssistantMd}
+              streaming={streamMarkdown}
+              webSources={webSources}
+              artifacts={artifacts}
+              accessToken={accessToken}
+              runId={message.streamId}
+              workFolder={workFolder}
+              onOpenDocument={onOpenDocument}
+              onOpenResource={onOpenResource}
+              typography={isWorkMode ? 'work' : 'default'}
+              trimTrailingMargin
+            />
+          )}
         </div>
         {!suppressActionBar && (
           <AssistantActionBar

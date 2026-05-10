@@ -55,6 +55,7 @@ type messageResponse struct {
 	Role            string          `json:"role"`
 	Content         string          `json:"content"`
 	ContentJSON     json.RawMessage `json:"content_json,omitempty"`
+	Artifacts       json.RawMessage `json:"artifacts,omitempty"`
 	CreatedAt       string          `json:"created_at"`
 }
 
