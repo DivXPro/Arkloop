@@ -1224,8 +1224,13 @@ export const ChatView = memo(function ChatView() {
 
           const cached = readMessageSources(msg.id)
           if (cached) sourcesMap.set(msg.id, cached)
-          const cachedArt = readMessageArtifacts(msg.id)
-          if (cachedArt) artifactsMap.set(msg.id, cachedArt)
+          const apiArtifacts = msg.metadata?.artifacts as ArtifactRef[] | undefined
+          if (apiArtifacts && apiArtifacts.length > 0) {
+            artifactsMap.set(msg.id, apiArtifacts)
+          } else {
+            const cachedArt = readMessageArtifacts(msg.id)
+            if (cachedArt) artifactsMap.set(msg.id, cachedArt)
+          }
           const cachedWidgets = readMessageWidgets(msg.id)
           if (cachedWidgets) widgetsMap.set(msg.id, cachedWidgets)
           const cachedExec = readMessageCodeExecutions(msg.id)

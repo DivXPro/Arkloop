@@ -948,6 +948,7 @@ export type MessageResponse = {
   content_json?: MessageContent
   created_at: string
   run_id?: string
+  artifacts?: Record<string, unknown>[]
 }
 
 export type UploadedThreadAttachment = {
