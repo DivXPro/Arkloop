@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ArtifactResource } from '@arkloop/shared'
+import { getKindConfig } from '../lib/kindRegistry'
 
 type Props = {
   resource: ArtifactResource
@@ -12,8 +13,8 @@ export function InlineArtifactCard({ resource, title, onClick }: Props) {
 
   const displayTitle = title || resource.title || 'Untitled'
   const isObjectBlob = resource.fetchMode === 'object-blob'
-  const isImageKind = resource.kind.startsWith('image.')
-  const showPreview = isObjectBlob && isImageKind && !imageError
+  const kindConfig = getKindConfig(resource.kind)
+  const showPreview = isObjectBlob && kindConfig.previewable && !imageError
 
   return (
     <div

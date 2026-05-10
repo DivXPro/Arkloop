@@ -144,6 +144,7 @@ export type {
   ArtifactHandle,
   ArtifactResource,
   ArtifactProducer,
+  KindConfig,
   ArtifactViewerRegistration,
   ArtifactContext,
   ContentSegment,

@@ -58,6 +58,16 @@ export interface ArtifactContext {
 }
 
 /**
+ * 系统级 kind 渲染配置（非消息字段，启动时注册）
+ */
+export interface KindConfig {
+  previewable: boolean
+  cardType: string
+  defaultDisplay: string
+  defaultViewer?: string
+}
+
+/**
  * 内联 artifact 标记解析后的段落
  */
 export type ContentSegment =
