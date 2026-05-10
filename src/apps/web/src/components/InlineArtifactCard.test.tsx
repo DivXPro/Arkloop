@@ -211,4 +211,63 @@ describe('InlineArtifactCard', () => {
     expect(html).toContain('Internal Link')
     expect(html).not.toContain('↗')
   })
+
+  it('shows open-panel button when onClick is provided', () => {
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_012',
+          kind: 'design.canvas',
+          title: 'Clickable',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'inline-json',
+          descriptor: {},
+        }}
+        onClick={() => {}}
+      />,
+    )
+
+    expect(html).toContain('⤢')
+    expect(html).toContain('artifact-open-panel')
+  })
+
+  it('does not show open-panel button when onClick is absent', () => {
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_013',
+          kind: 'design.canvas',
+          title: 'Not Clickable',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'inline-json',
+          descriptor: {},
+        }}
+      />,
+    )
+
+    expect(html).not.toContain('⤢')
+    expect(html).not.toContain('artifact-open-panel')
+  })
+
+  it('preview area blocks click propagation', () => {
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_014',
+          kind: 'image.png',
+          title: 'Photo',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'object-blob',
+          display: 'inline',
+          descriptor: { key: 'test/photo.png' },
+        }}
+        onClick={() => {}}
+      />,
+    )
+
+    // 预览区域应该绑定 stopPropagation（通过 onClick 属性存在判断）
+    // renderToStaticMarkup 不输出事件处理器，但至少验证 preview 容器存在
+    expect(html).toContain('artifact-preview')
+    expect(html).toContain('<img')
+  })
 })

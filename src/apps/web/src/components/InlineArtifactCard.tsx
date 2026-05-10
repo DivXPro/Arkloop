@@ -26,22 +26,13 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
   const artifactKey = resource.descriptor?.key as string | undefined
   const iframeSrc = artifactKey ? `/v1/artifacts/${artifactKey}` : undefined
 
-  const handleClick = () => {
+  const handleOpenPanel = () => {
     onClick?.(resource.id)
   }
 
-  const cardStyle: React.CSSProperties = {
-    border: '1px solid var(--c-border)',
-    borderRadius: '8px',
-    padding: '12px',
-    margin: '8px 0',
-    cursor: onClick ? 'pointer' : 'default',
-    background: 'var(--c-bg-sub)',
-    transition: 'background 0.15s ease',
-    ...(isLinkMode && {
-      padding: '10px 12px',
-      borderStyle: 'dashed',
-    }),
+  // 阻止预览区域的点击冒泡到 panel 打开
+  const stopPropagation = (e: React.MouseEvent) => {
+    e.stopPropagation()
   }
 
   return (
@@ -50,8 +41,18 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
       data-kind={resource.kind}
       data-testid={`inline-artifact-${resource.id}`}
       data-inline-mode={kindConfig.inlineMode}
-      style={cardStyle}
-      onClick={handleClick}
+      style={{
+        border: '1px solid var(--c-border)',
+        borderRadius: '8px',
+        padding: '12px',
+        margin: '8px 0',
+        background: 'var(--c-bg-sub)',
+        transition: 'background 0.15s ease',
+        ...(isLinkMode && {
+          padding: '10px 12px',
+          borderStyle: 'dashed',
+        }),
+      }}
       onMouseEnter={(e) => {
         e.currentTarget.style.background = 'var(--c-bg-input)'
       }}
@@ -59,13 +60,16 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
         e.currentTarget.style.background = 'var(--c-bg-sub)'
       }}
     >
+      {/* 标题行：可点击打开 Panel */}
       <div
         className="artifact-row"
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
+          cursor: onClick ? 'pointer' : 'default',
         }}
+        onClick={handleOpenPanel}
       >
         <span className="artifact-icon" style={{ fontSize: '20px', lineHeight: 1 }}>
           {kindIcon(resource.kind)}
@@ -79,12 +83,16 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
             fontSize: '14px',
             textDecoration: isLinkMode ? 'underline' : 'none',
             textUnderlineOffset: '2px',
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}
         >
           {displayTitle}
         </span>
         {isLinkMode && isExternalUrl && (
-          <span style={{ fontSize: '13px', color: 'var(--c-text-muted)' }}>↗</span>
+          <span style={{ fontSize: '13px', color: 'var(--c-text-muted)', flexShrink: 0 }}>↗</span>
         )}
         <span
           className="artifact-kind"
@@ -95,14 +103,42 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
             background: 'var(--c-bg-deep)',
             borderRadius: '4px',
             fontFamily: 'monospace',
+            flexShrink: 0,
           }}
         >
           {resource.kind}
         </span>
+        {/* 打开 Panel 按钮 */}
+        {onClick && (
+          <span
+            className="artifact-open-panel"
+            title="在 Panel 中打开"
+            style={{
+              fontSize: '13px',
+              color: 'var(--c-text-muted)',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              flexShrink: 0,
+              opacity: 0.7,
+              transition: 'opacity 0.15s ease, background 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = '1'
+              e.currentTarget.style.background = 'var(--c-bg-deep)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '0.7'
+              e.currentTarget.style.background = 'transparent'
+            }}
+          >
+            ⤢
+          </span>
+        )}
       </div>
 
+      {/* 预览区域：点击不触发 Panel 打开 */}
       {showImagePreview && (
-        <div className="artifact-preview" style={{ marginTop: '8px' }}>
+        <div className="artifact-preview" style={{ marginTop: '8px' }} onClick={stopPropagation}>
           <img
             src={`/v1/artifacts/${artifactKey}`}
             alt={displayTitle}
@@ -119,7 +155,7 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
       )}
 
       {showIframePreview && iframeSrc && (
-        <div className="artifact-preview" style={{ marginTop: '8px' }}>
+        <div className="artifact-preview" style={{ marginTop: '8px' }} onClick={stopPropagation}>
           <iframe
             src={iframeSrc}
             title={displayTitle}
