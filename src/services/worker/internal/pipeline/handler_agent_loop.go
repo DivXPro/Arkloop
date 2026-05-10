@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"arkloop/services/shared/artifact"
 	"arkloop/services/shared/creditpolicy"
 	sharedent "arkloop/services/shared/entitlement"
 	"arkloop/services/shared/eventbus"
@@ -317,6 +318,9 @@ type eventWriter struct {
 	pendingToolCalls     []llm.ToolCall
 	pendingToolResults   []intermediateMessage
 	intermediateMessages []intermediateMessage
+
+	// artifacts 收集本 Run 中各 tool result 产生的产物，随最终 assistant message 的 metadata 写入。
+	artifacts []artifact.Resource
 }
 
 type intermediateMessage struct {
@@ -507,10 +511,14 @@ func (w *eventWriter) insertStreamRemainder(
 		return err
 	}
 	w.logAssistantMessagePersistDebug(ctx, "stream_remainder", assistantDebugCountsFromText(content), 0)
+	metadata := map[string]any{"stream_chunk": true}
+	if len(w.artifacts) > 0 {
+		metadata["artifacts"] = w.artifacts
+	}
 	messageID, err := repo.InsertAssistantMessageWithMetadata(
 		ctx, w.tx, accountID, threadID, w.run.ID,
 		content, nil, false,
-		map[string]any{"stream_chunk": true},
+		metadata,
 	)
 	if err != nil {
 		return err
@@ -1053,7 +1061,13 @@ func (w *eventWriter) InsertAssistantMessage(
 		return uuid.Nil, err
 	}
 	w.logAssistantMessagePersistDebug(ctx, "final_assistant", assistantDebugCountsFromMessage(message), len(contentJSON))
-	messageID, err := repo.InsertAssistantMessage(ctx, w.tx, accountID, threadID, w.run.ID, content, contentJSON, hidden)
+
+	var metadata map[string]any
+	if len(w.artifacts) > 0 {
+		metadata = map[string]any{"artifacts": w.artifacts}
+	}
+
+	messageID, err := repo.InsertAssistantMessageWithMetadata(ctx, w.tx, accountID, threadID, w.run.ID, content, contentJSON, hidden, metadata)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -1230,6 +1244,9 @@ func (w *eventWriter) collectToolResult(dataJSON map[string]any) {
 	}
 	if v, ok := dataJSON["result"]; ok {
 		envelope["result"] = v
+		if resultMap, ok := v.(map[string]any); ok {
+			w.extractArtifactsFromToolResult(resultMap, toolName)
+		}
 	}
 	if v, ok := dataJSON["error"]; ok {
 		envelope["error"] = v
@@ -1244,6 +1261,58 @@ func (w *eventWriter) collectToolResult(dataJSON map[string]any) {
 		Content:    string(raw),
 		ToolCallID: callID,
 	})
+}
+
+func (w *eventWriter) extractArtifactsFromToolResult(result map[string]any, toolName string) {
+	artifactsRaw, ok := result["artifacts"].([]any)
+	if !ok || len(artifactsRaw) == 0 {
+		return
+	}
+
+	runID := w.run.ID.String()
+	for _, a := range artifactsRaw {
+		m, ok := a.(map[string]any)
+		if !ok {
+			continue
+		}
+		key, _ := m["key"].(string)
+		if key == "" {
+			continue
+		}
+
+		filename, _ := m["filename"].(string)
+		mimeType, _ := m["mime_type"].(string)
+		title, _ := m["title"].(string)
+		if title == "" {
+			title = filename
+		}
+		if title == "" {
+			title = key
+		}
+
+		kind := mimeType
+		if kind == "" {
+			kind = "unknown"
+		}
+
+		display, _ := m["display"].(string)
+		if display != "panel" {
+			display = "inline"
+		}
+
+		w.artifacts = append(w.artifacts, artifact.Resource{
+			ID:        key,
+			Kind:      kind,
+			Title:     title,
+			MimeType:  &mimeType,
+			Display:   display,
+			Producer:  artifact.Producer{Type: "agent", ID: toolName, RunID: &runID},
+			FetchMode: "object-blob",
+			Descriptor: map[string]any{
+				"key": key,
+			},
+		})
+	}
 }
 
 func (w *eventWriter) batchInsertIntermediateMessages(

@@ -139,3 +139,13 @@ export { DebugPanel } from './components/DebugPanel'
 export { DebugTrigger } from './components/DebugTrigger'
 export { debugBus } from './debug-bus'
 export type { DebugEntry } from './debug-bus'
+
+export type {
+  ArtifactHandle,
+  ArtifactResource,
+  ArtifactProducer,
+  KindConfig,
+  ArtifactViewerRegistration,
+  ArtifactContext,
+  ContentSegment,
+} from './artifact'
