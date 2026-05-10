@@ -214,7 +214,7 @@ export function AppLayout() {
   const { sidebarCollapsed, sidebarHidden, sidebarHiddenByWidth, rightPanelOpen, toggleSidebar } = useSidebarUI()
   const { isSearchMode, searchOverlayOpen, exitSearchMode, closeSearchOverlay } = useSearchUI()
   const { appMode, availableAppModes, setAppMode } = useAppModeUI()
-  const { openSettings, closeSettings } = useSettingsUI()
+  const { settingsOpen, openSettings, closeSettings } = useSettingsUI()
   const { closeNotifications } = useNotificationsUI()
   const { queueSkillPrompt } = useSkillPromptUI()
   const { triggerTitleBarIncognitoClick } = useTitleBarIncognitoUI()
