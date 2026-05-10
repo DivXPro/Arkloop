@@ -10,8 +10,8 @@ vi.mock('../storage', async () => {
   return {
     ...actual,
     readPluginRuntimeState: vi.fn(() => ({
-      lastPluginId: 'sample-page-plugin',
-      presentationByPluginId: { 'sample-page-plugin': 'route' as const },
+      lastPluginId: 'open-design',
+      presentationByPluginId: { 'open-design': 'route' as const },
     })),
     writePluginRuntimeState: vi.fn(),
   }
@@ -26,11 +26,8 @@ function Probe() {
     <div>
       <div data-testid="active">{activePluginId ?? 'none'}</div>
       <div data-testid="path">{location.pathname}</div>
-      <button type="button" onClick={() => void openPlugin('sample-page-plugin')}>
-        open-page
-      </button>
-      <button type="button" onClick={() => void openPlugin('sample-browser-plugin')}>
-        open-browser
+      <button type="button" onClick={() => void openPlugin('open-design')}>
+        open-design
       </button>
       <button type="button" onClick={() => navigate('/t/thread-2')}>
         go-thread
@@ -82,8 +79,8 @@ describe('PluginRuntimeProvider', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('sample-page-plugin')
-    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/plugins/sample-page-plugin')
+    expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('open-design')
+    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/plugins/open-design')
   })
 
   it('does not restore an active plugin highlight on cold start outside plugin context', async () => {
@@ -102,29 +99,6 @@ describe('PluginRuntimeProvider', () => {
     expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('none')
   })
 
-  it('keeps the current workspace route when opening a browser plugin', async () => {
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/t/thread-1']}>
-          <PluginRuntimeProvider>
-            <Probe />
-          </PluginRuntimeProvider>
-        </MemoryRouter>,
-      )
-      await Promise.resolve()
-    })
-
-    await act(async () => {
-      container
-        .querySelectorAll('button')[1]
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
-    expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('sample-browser-plugin')
-    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe('/t/thread-1')
-  })
-
   it('clears the active plugin when leaving plugin mode for a thread route', async () => {
     await act(async () => {
       root.render(
@@ -139,16 +113,16 @@ describe('PluginRuntimeProvider', () => {
 
     await act(async () => {
       container
-        .querySelectorAll('button')[1]
+        .querySelector('button')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('sample-browser-plugin')
+    expect(container.querySelector('[data-testid="active"]')?.textContent).toBe('open-design')
 
     await act(async () => {
       container
-        .querySelectorAll('button')[2]
+        .querySelectorAll('button')[1]
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
