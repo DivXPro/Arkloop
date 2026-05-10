@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { InlineArtifactCard } from './InlineArtifactCard'
+import { registerKindPrefix, setDefaultKindConfig } from '../lib/kindRegistry'
 
 describe('InlineArtifactCard', () => {
   it('renders artifact title and kind', () => {
@@ -111,5 +112,103 @@ describe('InlineArtifactCard', () => {
     expect(html).not.toContain('/v1/artifacts/test/panel.png/preview')
     expect(html).not.toContain('<img')
     expect(html).toContain('Panel Photo')
+  })
+
+  it('shows iframe preview for iframe inlineMode with object-blob', () => {
+    registerKindPrefix('iframe.', { inlineMode: 'iframe' })
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_007',
+          kind: 'iframe.html',
+          title: 'Embedded Page',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'object-blob',
+          display: 'inline',
+          descriptor: { key: 'test/page.html' },
+        }}
+      />,
+    )
+
+    expect(html).toContain('<iframe')
+    expect(html).toContain('/v1/artifacts/test/page.html')
+    expect(html).toContain('sandbox="allow-scripts allow-same-origin"')
+    expect(html).toContain('Embedded Page')
+  })
+
+  it('does not show iframe preview when display=panel', () => {
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_008',
+          kind: 'iframe.html',
+          title: 'Panel Frame',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'object-blob',
+          display: 'panel',
+          descriptor: { key: 'test/panel.html' },
+        }}
+      />,
+    )
+
+    expect(html).not.toContain('<iframe')
+    expect(html).toContain('Panel Frame')
+  })
+
+  it('does not show iframe preview for non-object-blob', () => {
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_009',
+          kind: 'iframe.html',
+          title: 'No Blob',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'inline-json',
+          display: 'inline',
+          descriptor: { key: 'test/no-blob.html' },
+        }}
+      />,
+    )
+
+    expect(html).not.toContain('<iframe')
+    expect(html).toContain('No Blob')
+  })
+
+  it('renders link style for link inlineMode', () => {
+    registerKindPrefix('link.', { inlineMode: 'link' })
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_010',
+          kind: 'link.url',
+          title: 'External Link',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'external-url',
+          descriptor: { url: 'https://example.com' },
+        }}
+      />,
+    )
+
+    expect(html).toContain('External Link')
+    expect(html).toContain('↗')
+    expect(html).toContain('text-decoration:underline')
+  })
+
+  it('does not show external link arrow for non-external-url link mode', () => {
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_011',
+          kind: 'link.url',
+          title: 'Internal Link',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'object-blob',
+          descriptor: { key: 'test/doc' },
+        }}
+      />,
+    )
+
+    expect(html).toContain('Internal Link')
+    expect(html).not.toContain('↗')
   })
 })

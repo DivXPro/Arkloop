@@ -19,6 +19,7 @@ export const MixedContentRenderer = memo(function MixedContentRenderer({
   onOpenArtifact,
   ...markdownProps
 }: Props) {
+  const { accessToken } = markdownProps
   const segments = parseMixedContent(content)
 
   return (
@@ -37,6 +38,7 @@ export const MixedContentRenderer = memo(function MixedContentRenderer({
               resource={resource}
               title={segment.title}
               onClick={onOpenArtifact}
+              accessToken={accessToken}
             />
           )
         }
