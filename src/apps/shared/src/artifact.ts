@@ -62,10 +62,12 @@ export interface ArtifactContext {
  * 系统级 kind 渲染配置（非消息字段，启动时注册）
  * inlineMode 决定 inline 状态下的渲染方式
  * viewer 指定打开时使用的 viewer（可选）
+ * clickAction 控制 inline 状态下的点击行为
  */
 export interface KindConfig {
   inlineMode: 'image' | 'iframe' | 'card-preview' | 'link'
   viewer?: string
+  clickAction?: 'open-panel' | 'open-external' | 'none'
 }
 
 /**

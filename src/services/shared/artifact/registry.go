@@ -5,9 +5,11 @@ import "sync"
 // KindConfig 定义某一 kind 的渲染与交互配置。
 // 配置属于系统级（非消息字段），启动时注册，运行期只读。
 // InlineMode 决定 inline 状态下的渲染方式；Viewer 指定打开时使用的 viewer（可选）。
+// ClickAction 控制 inline 状态下的点击行为：open-panel / open-external / none。
 type KindConfig struct {
-	InlineMode string  `json:"inlineMode"`
-	Viewer     *string `json:"viewer,omitempty"`
+	InlineMode  string  `json:"inlineMode"`
+	Viewer      *string `json:"viewer,omitempty"`
+	ClickAction string  `json:"clickAction,omitempty"`
 }
 
 // Registry 维护 kind → KindConfig 的映射，支持精确匹配和前缀匹配。

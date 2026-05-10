@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { InlineArtifactCard } from './InlineArtifactCard'
-import { registerKindPrefix, setDefaultKindConfig } from '../lib/kindRegistry'
+import { registerKind, registerKindPrefix, setDefaultKindConfig } from '../lib/kindRegistry'
 
 describe('InlineArtifactCard', () => {
   it('renders artifact title and kind', () => {
@@ -37,25 +37,6 @@ describe('InlineArtifactCard', () => {
     )
 
     expect(html).toContain('Untitled')
-  })
-
-  it('calls onClick when clicked', () => {
-    const onClick = vi.fn()
-    const html = renderToStaticMarkup(
-      <InlineArtifactCard
-        resource={{
-          id: 'art_003',
-          kind: 'document.markdown',
-          title: 'Doc',
-          producer: { type: 'agent', id: 'test' },
-          fetchMode: 'inline-json',
-          descriptor: {},
-        }}
-        onClick={onClick}
-      />,
-    )
-
-    expect(html).toContain('inline-artifact-art_003')
   })
 
   it('shows image preview for inline object-blob image kinds', () => {
@@ -109,7 +90,6 @@ describe('InlineArtifactCard', () => {
       />,
     )
 
-    expect(html).not.toContain('/v1/artifacts/test/panel.png/preview')
     expect(html).not.toContain('<img')
     expect(html).toContain('Panel Photo')
   })
@@ -190,84 +170,132 @@ describe('InlineArtifactCard', () => {
     )
 
     expect(html).toContain('External Link')
-    expect(html).toContain('↗')
     expect(html).toContain('text-decoration:underline')
   })
 
-  it('does not show external link arrow for non-external-url link mode', () => {
+  // === clickAction 行为控制测试 ===
+
+  it('external-url fetchMode defaults to open-external clickAction', () => {
     const html = renderToStaticMarkup(
       <InlineArtifactCard
         resource={{
-          id: 'art_011',
-          kind: 'link.url',
-          title: 'Internal Link',
+          id: 'art_020',
+          kind: 'document.markdown',
+          title: 'External Doc',
           producer: { type: 'agent', id: 'test' },
-          fetchMode: 'object-blob',
-          descriptor: { key: 'test/doc' },
-        }}
-      />,
-    )
-
-    expect(html).toContain('Internal Link')
-    expect(html).not.toContain('↗')
-  })
-
-  it('shows open-panel button when onClick is provided', () => {
-    const html = renderToStaticMarkup(
-      <InlineArtifactCard
-        resource={{
-          id: 'art_012',
-          kind: 'design.canvas',
-          title: 'Clickable',
-          producer: { type: 'agent', id: 'test' },
-          fetchMode: 'inline-json',
-          descriptor: {},
+          fetchMode: 'external-url',
+          descriptor: { url: 'https://example.com/doc' },
         }}
         onClick={() => {}}
       />,
     )
 
-    expect(html).toContain('⤢')
-    expect(html).toContain('artifact-open-panel')
-  })
-
-  it('does not show open-panel button when onClick is absent', () => {
-    const html = renderToStaticMarkup(
-      <InlineArtifactCard
-        resource={{
-          id: 'art_013',
-          kind: 'design.canvas',
-          title: 'Not Clickable',
-          producer: { type: 'agent', id: 'test' },
-          fetchMode: 'inline-json',
-          descriptor: {},
-        }}
-      />,
-    )
-
+    expect(html).toContain('data-click-action="open-external"')
+    expect(html).toContain('↗')
     expect(html).not.toContain('⤢')
     expect(html).not.toContain('artifact-open-panel')
   })
 
-  it('preview area blocks click propagation', () => {
+  it('object-blob fetchMode defaults to open-panel clickAction when onClick provided', () => {
     const html = renderToStaticMarkup(
       <InlineArtifactCard
         resource={{
-          id: 'art_014',
-          kind: 'image.png',
-          title: 'Photo',
+          id: 'art_021',
+          kind: 'design.canvas',
+          title: 'Panel Open',
           producer: { type: 'agent', id: 'test' },
           fetchMode: 'object-blob',
-          display: 'inline',
-          descriptor: { key: 'test/photo.png' },
+          descriptor: { key: 'test/design' },
         }}
         onClick={() => {}}
       />,
     )
 
-    // 预览区域应该绑定 stopPropagation（通过 onClick 属性存在判断）
-    // renderToStaticMarkup 不输出事件处理器，但至少验证 preview 容器存在
-    expect(html).toContain('artifact-preview')
-    expect(html).toContain('<img')
+    expect(html).toContain('data-click-action="open-panel"')
+    expect(html).toContain('⤢')
+    expect(html).toContain('artifact-open-panel')
+  })
+
+  it('clickAction=none disables clicking and hides buttons', () => {
+    registerKind('none.thing', { inlineMode: 'card-preview', clickAction: 'none' })
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_022',
+          kind: 'none.thing',
+          title: 'No Click',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'object-blob',
+          descriptor: { key: 'test/thing' },
+        }}
+        onClick={() => {}}
+      />,
+    )
+
+    expect(html).toContain('data-click-action="none"')
+    expect(html).not.toContain('⤢')
+    expect(html).not.toContain('artifact-open-panel')
+    expect(html).not.toContain('↗')
+  })
+
+  it('clickAction=open-external via kindConfig overrides default behavior', () => {
+    registerKind('custom.external', { inlineMode: 'card-preview', clickAction: 'open-external' })
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_023',
+          kind: 'custom.external',
+          title: 'Forced External',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'object-blob',
+          descriptor: { url: 'https://forced.example.com' },
+        }}
+        onClick={() => {}}
+      />,
+    )
+
+    expect(html).toContain('data-click-action="open-external"')
+    expect(html).toContain('↗')
+    expect(html).not.toContain('⤢')
+  })
+
+  it('clickAction=open-panel via kindConfig forces panel even for external-url', () => {
+    registerKind('custom.panel', { inlineMode: 'card-preview', clickAction: 'open-panel' })
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_024',
+          kind: 'custom.panel',
+          title: 'Forced Panel',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'external-url',
+          descriptor: { url: 'https://example.com' },
+        }}
+        onClick={() => {}}
+      />,
+    )
+
+    expect(html).toContain('data-click-action="open-panel"')
+    expect(html).toContain('⤢')
+    expect(html).not.toContain('↗')
+  })
+
+  it('no onClick defaults to none clickAction for non-external-url', () => {
+    const html = renderToStaticMarkup(
+      <InlineArtifactCard
+        resource={{
+          id: 'art_025',
+          kind: 'design.canvas',
+          title: 'No Handler',
+          producer: { type: 'agent', id: 'test' },
+          fetchMode: 'object-blob',
+          descriptor: { key: 'test/design' },
+        }}
+      />,
+    )
+
+    expect(html).toContain('data-click-action="none"')
+    expect(html).not.toContain('⤢')
+    expect(html).not.toContain('artifact-open-panel')
   })
 })

@@ -26,11 +26,29 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
   const artifactKey = resource.descriptor?.key as string | undefined
   const iframeSrc = artifactKey ? `/v1/artifacts/${artifactKey}` : undefined
 
-  const handleOpenPanel = () => {
-    onClick?.(resource.id)
+  // clickAction 控制点击行为：
+  // - 显式配置优先
+  // - 未配置时，external-url 默认打开外部链接，其他默认打开 Panel
+  const clickAction = kindConfig.clickAction ?? (isExternalUrl ? 'open-external' : onClick ? 'open-panel' : 'none')
+
+  const handleClick = () => {
+    if (clickAction === 'open-external') {
+      const url = resource.descriptor?.url as string | undefined
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+      }
+      return
+    }
+    if (clickAction === 'open-panel') {
+      onClick?.(resource.id)
+      return
+    }
+    // clickAction === 'none'：不做任何操作
   }
 
-  // 阻止预览区域的点击冒泡到 panel 打开
+  const isClickable = clickAction !== 'none'
+
+  // 阻止预览区域的点击冒泡到标题行
   const stopPropagation = (e: React.MouseEvent) => {
     e.stopPropagation()
   }
@@ -41,6 +59,7 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
       data-kind={resource.kind}
       data-testid={`inline-artifact-${resource.id}`}
       data-inline-mode={kindConfig.inlineMode}
+      data-click-action={clickAction}
       style={{
         border: '1px solid var(--c-border)',
         borderRadius: '8px',
@@ -60,16 +79,16 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
         e.currentTarget.style.background = 'var(--c-bg-sub)'
       }}
     >
-      {/* 标题行：可点击打开 Panel */}
+      {/* 标题行：根据 clickAction 决定点击行为 */}
       <div
         className="artifact-row"
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          cursor: onClick ? 'pointer' : 'default',
+          cursor: isClickable ? 'pointer' : 'default',
         }}
-        onClick={handleOpenPanel}
+        onClick={isClickable ? handleClick : undefined}
       >
         <span className="artifact-icon" style={{ fontSize: '20px', lineHeight: 1 }}>
           {kindIcon(resource.kind)}
@@ -91,7 +110,7 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
         >
           {displayTitle}
         </span>
-        {isLinkMode && isExternalUrl && (
+        {clickAction === 'open-external' && (
           <span style={{ fontSize: '13px', color: 'var(--c-text-muted)', flexShrink: 0 }}>↗</span>
         )}
         <span
@@ -108,8 +127,8 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
         >
           {resource.kind}
         </span>
-        {/* 打开 Panel 按钮 */}
-        {onClick && (
+        {/* 打开 Panel 按钮：仅在 open-panel 模式下显示 */}
+        {clickAction === 'open-panel' && (
           <span
             className="artifact-open-panel"
             title="在 Panel 中打开"
@@ -136,7 +155,7 @@ export function InlineArtifactCard({ resource, title, onClick, accessToken }: Pr
         )}
       </div>
 
-      {/* 预览区域：点击不触发 Panel 打开 */}
+      {/* 预览区域：点击不触发标题行点击 */}
       {showImagePreview && (
         <div className="artifact-preview" style={{ marginTop: '8px' }} onClick={stopPropagation}>
           <img
