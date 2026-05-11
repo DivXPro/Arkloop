@@ -132,8 +132,14 @@ func NewToolBuildMiddleware() RunMiddleware {
 		}
 
 		coreSet := resolveCoreToolSet(rc)
+		searchableToolNames := []string{}
 		if coreSet != nil {
 			coreSpecs, searchableSpecs := splitToolSpecs(allSpecs, coreSet)
+			for _, spec := range searchableSpecs {
+				if name := strings.TrimSpace(spec.Name); name != "" {
+					searchableToolNames = append(searchableToolNames, name)
+				}
+			}
 
 			// Populate coreSpecsMap so load_tools can resolve queries against active tools.
 			if len(coreSpecs) > 0 {
@@ -183,8 +189,10 @@ func NewToolBuildMiddleware() RunMiddleware {
 			}
 		}
 		emitTraceEvent(rc, "tool_build", "tool_build.completed", map[string]any{
-			"final_tool_count": len(rc.FinalSpecs),
-			"tool_names":       traceToolNames(toolNames),
+			"final_tool_count":      len(rc.FinalSpecs),
+			"tool_names":            traceToolNames(toolNames),
+			"searchable_tool_count": len(searchableToolNames),
+			"searchable_tool_names": traceToolNames(searchableToolNames),
 		})
 
 		return next(ctx, rc)

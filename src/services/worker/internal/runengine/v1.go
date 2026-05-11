@@ -960,7 +960,6 @@ func buildRoutingLayer(
 ) []pipeline.RunMiddleware {
 	return []pipeline.RunMiddleware{
 		pipeline.NewRoutingMiddleware(deps.Router, deps.RoutingConfigLoader, deps.AuxGateway, deps.EmitDebugEvents, runsRepo, eventsRepo, releaseSlot, resolver),
-		pipeline.NewModelIdentityMiddleware(),
 		pipeline.NewChannelGroupContextTrimMiddleware(pipeline.GroupContextTrimDeps{
 			Pool:            deps.DBPool,
 			MessagesRepo:    messagesRepo,
@@ -983,6 +982,7 @@ func buildToolFinalizeLayer(deps EngineV1Deps, eventsRepo data.RunEventsReposito
 			EventsRepo:          eventsRepo,
 		}),
 		pipeline.NewHeartbeatPrepareMiddleware(),
+		pipeline.NewModelIdentityMiddleware(),
 		pipeline.NewConditionalToolsMiddleware(),
 		pipeline.NewToolDescriptionOverrideMiddleware(deps.ToolDescriptionOverridesRepo),
 		pipeline.NewPlatformMiddleware(deps.PlatformToolExecutor),

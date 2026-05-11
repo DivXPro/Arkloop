@@ -55,12 +55,10 @@ try {
     get() { return 'zh-CN' },
   })
 } catch {
-  // navigator.language 可能不可写；放 fallback 到 beforeAll
-  beforeAll(() => {
-    try {
-      localStorage.setItem('arkloop:web:locale', 'zh')
-    } catch {
-      // ignore
-    }
-  })
+  // navigator.language 可能不可写；直接设 localStorage fallback
+  try {
+    localStorage.setItem('arkloop:web:locale', 'zh')
+  } catch {
+    // ignore
+  }
 }

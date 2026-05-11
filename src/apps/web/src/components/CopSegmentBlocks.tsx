@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { AssistantTurnSegment } from '../assistantTurnSegments'
 import type { CodeExecution } from './CodeExecutionCard'
 import type { CodeExecutionRef, FileOpRef, SubAgentRef, WebFetchRef, WebSource } from '../storage'
@@ -143,7 +144,7 @@ function todoForFinalDisplay(todo: TodoWriteRef, allTodos: TodoWriteRef[]): Todo
   }
 }
 
-export function CopSegmentBlocks({
+export const CopSegmentBlocks = memo(function CopSegmentBlocks({
   segment,
   keyPrefix,
   codeExecutions,
@@ -275,4 +276,4 @@ export function CopSegmentBlocks({
       })}
     </>
   )
-}
+})

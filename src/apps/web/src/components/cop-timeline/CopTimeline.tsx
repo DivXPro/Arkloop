@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { memo, useState, useEffect, useRef } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ChevronRight } from 'lucide-react'
 import type { CodeExecution } from '../CodeExecutionCard'
@@ -36,7 +36,7 @@ function isSingleImageToolSegment(segment: CopSubSegment): boolean {
   return segment.category === 'image' && segment.items.length === 1 && segment.items[0]?.kind === 'call'
 }
 
-export function CopTimeline({
+export const CopTimeline = memo(function CopTimeline({
   segments,
   pool,
   thinkingOnly,
@@ -364,4 +364,4 @@ export function CopTimeline({
       )}
     </div>
   )
-}
+})

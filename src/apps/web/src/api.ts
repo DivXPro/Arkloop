@@ -936,6 +936,7 @@ export type MessageContent = {
 export type CreateMessageRequest = {
   content?: string
   content_json?: MessageContent
+  client_message_id?: string
 }
 
 export type MessageResponse = {
@@ -948,6 +949,7 @@ export type MessageResponse = {
   content_json?: MessageContent
   created_at: string
   run_id?: string
+  client_message_id?: string
 }
 
 export type UploadedThreadAttachment = {
@@ -1911,6 +1913,9 @@ export type RunDetail = {
   total_cost_usd?: number
   duration_ms?: number
   cache_hit_rate?: number
+  cache_creation_tokens?: number
+  cache_read_tokens?: number
+  cached_tokens?: number
   credits_used?: number
   created_at: string
   completed_at?: string
@@ -1940,6 +1945,9 @@ export type Run = {
   total_cost_usd?: number
   duration_ms?: number
   cache_hit_rate?: number
+  cache_creation_tokens?: number
+  cache_read_tokens?: number
+  cached_tokens?: number
   credits_used?: number
   created_at: string
   completed_at?: string

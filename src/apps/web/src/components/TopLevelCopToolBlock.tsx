@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import type { CodeExecutionRef } from '../storage'
 import type { FileOpRef } from '../storage'
 import type { GenericToolCallRef, TodoWriteRef } from '../copSegmentTimeline'
@@ -118,7 +118,7 @@ function TopLevelToolFrame({ toolName, children }: { toolName: string; children:
   )
 }
 
-export function TopLevelCopToolBlock({
+export const TopLevelCopToolBlock = memo(function TopLevelCopToolBlock({
   entry,
   live,
   onOpenCodeExecution,
@@ -195,4 +195,4 @@ export function TopLevelCopToolBlock({
       }
     </TopLevelToolFrame>
   )
-}
+})

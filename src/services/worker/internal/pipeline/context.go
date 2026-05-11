@@ -159,6 +159,8 @@ type RunContext struct {
 	AllowlistSet  map[string]struct{}
 	ToolDenylist  []string
 	ToolRegistry  *tools.Registry
+	// MCPToolNames records tools discovered from enabled MCP servers before persona narrowing.
+	MCPToolNames map[string]struct{}
 	// group_name -> provider_name
 	ActiveToolProviderByGroup map[string]string
 	// group_name -> active provider config

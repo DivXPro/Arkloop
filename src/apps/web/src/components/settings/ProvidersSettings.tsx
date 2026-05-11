@@ -40,6 +40,7 @@ import { SettingsSelect } from './_SettingsSelect'
 import { SettingsSegmentedControl } from './_SettingsSegmentedControl'
 import { SettingsSwitch } from './_SettingsSwitch'
 import { SettingsSummaryCard, SettingsSummaryCardBadge, SettingsSummaryCardLine } from './_SettingsSummaryCard'
+import { SETTINGS_TWO_COLUMN_GRID_CLASS } from './_SettingsLayout'
 import {
   AdvancedOptionsDisclosure,
   HeadersEditor,
@@ -340,7 +341,7 @@ export function ProvidersSettings({ accessToken }: Props) {
       </div>
 
       {filteredProviders.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={SETTINGS_TWO_COLUMN_GRID_CLASS}>
           {filteredProviders.map((provider) => (
             <ProviderSummaryCard
               key={provider.id}
@@ -1292,35 +1293,80 @@ function ProviderDetailRow({
 }
 
 function ErrorDetailsButton({ error }: { error: ProviderActionError }) {
-  const [open, setOpen] = useState(false)
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null)
+  const triggerRef = useRef<HTMLDivElement>(null)
+
+  const computeStyle = useCallback((): CSSProperties | null => {
+    const trigger = triggerRef.current
+    if (!trigger || typeof window === 'undefined') return null
+    const rect = trigger.getBoundingClientRect()
+    const margin = 8
+    const width = 300
+    const maxH = 180
+    const spaceBelow = window.innerHeight - rect.bottom - margin
+    const top = spaceBelow >= maxH
+      ? rect.bottom + 6
+      : Math.max(margin, rect.top - 6 - maxH)
+    const left = Math.min(Math.max(margin, rect.right - width), window.innerWidth - margin - width)
+    return { position: 'fixed', top, left, width, maxHeight: maxH, zIndex: 10000 }
+  }, [])
+
+  const open = menuStyle !== null
+
+  useEffect(() => {
+    if (!open) return
+    const reposition = () => {
+      const next = computeStyle()
+      if (next) setMenuStyle(next)
+    }
+    const close = (e: MouseEvent) => {
+      if (triggerRef.current?.contains(e.target as Node)) return
+      setMenuStyle(null)
+    }
+    window.addEventListener('resize', reposition)
+    window.addEventListener('scroll', reposition, true)
+    document.addEventListener('mousedown', close, true)
+    return () => {
+      window.removeEventListener('resize', reposition)
+      window.removeEventListener('scroll', reposition, true)
+      document.removeEventListener('mousedown', close, true)
+    }
+  }, [open, computeStyle])
+
+  const handleToggle = () => {
+    if (open) {
+      setMenuStyle(null)
+      return
+    }
+    const next = computeStyle()
+    if (next) setMenuStyle(next)
+  }
 
   return (
-    <div className="relative">
+    <div ref={triggerRef}>
       <SettingsButton
         variant="danger"
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleToggle}
         style={{ color: 'var(--c-status-error-text)' }}
       >
         Error
       </SettingsButton>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div
-            className="dropdown-menu absolute right-0 top-[calc(100%+6px)] z-50 max-w-[360px] min-w-[240px]"
-            style={{
-              border: '0.5px solid var(--c-border-subtle)',
-              borderRadius: '10px',
-              padding: '12px',
-              background: 'var(--c-bg-menu)',
-              boxShadow: 'var(--c-dropdown-shadow)',
-              maxHeight: '180px',
-              overflowY: 'auto',
-            }}
-          >
-            <pre className="whitespace-pre-wrap break-all text-xs text-[var(--c-text-secondary)]">{formatProviderActionError(error)}</pre>
-          </div>
-        </>
+      {menuStyle && createPortal(
+        <div
+          className="dropdown-menu overflow-y-auto"
+          style={{
+            ...menuStyle,
+            border: '0.5px solid var(--c-border-subtle)',
+            borderRadius: '10px',
+            padding: '12px',
+            background: 'var(--c-bg-menu)',
+            boxShadow: 'var(--c-dropdown-shadow)',
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <pre className="whitespace-pre-wrap break-all text-xs text-[var(--c-text-secondary)]">{formatProviderActionError(error)}</pre>
+        </div>,
+        document.body,
       )}
     </div>
   )

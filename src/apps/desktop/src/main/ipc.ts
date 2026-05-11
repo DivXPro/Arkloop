@@ -937,6 +937,8 @@ async function makeApiRequestRaw(url: string, method: string, token: string, bod
   const config = loadConfig()
   const timeoutMs = timeoutMsOverride ?? config.network.requestTimeoutMs ?? 30000
   const maxAttempts = Math.max(1, (config.network.retryCount ?? 1) + 1)
+  const normalizedMethod = method.toUpperCase()
+  const retryableMethod = normalizedMethod === 'GET' || normalizedMethod === 'HEAD' || normalizedMethod === 'OPTIONS'
   let attempt = 0
 
   const run = (): Promise<{ status: number; body: string }> => new Promise((resolve, reject) => {
@@ -945,7 +947,7 @@ async function makeApiRequestRaw(url: string, method: string, token: string, bod
       hostname: parsed.hostname,
       port: parseInt(parsed.port, 10) || 80,
       path: parsed.pathname + parsed.search,
-      method,
+      method: normalizedMethod,
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -980,7 +982,7 @@ async function makeApiRequestRaw(url: string, method: string, token: string, bod
       return await run()
     } catch (error) {
       attempt += 1
-      if (attempt >= maxAttempts) throw error
+      if (!retryableMethod || attempt >= maxAttempts) throw error
     }
   }
 }

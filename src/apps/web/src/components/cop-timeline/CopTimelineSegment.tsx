@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react'
+import { memo, useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { segmentCompletedTitle, type CopSubSegment, type ResolvedPool } from '../../copSubSegment'
@@ -38,7 +38,7 @@ function cardIsNearBottom(el: HTMLElement) {
   return maxScrollTop - el.scrollTop <= CARD_BOTTOM_FOLLOW_THRESHOLD
 }
 
-export function CopTimelineSegment({
+export const CopTimelineSegment = memo(function CopTimelineSegment({
   segment,
   pool,
   isLive,
@@ -267,7 +267,7 @@ export function CopTimelineSegment({
       </motion.div>
     </div>
   )
-}
+})
 
 function itemTypeId(item: CopSubSegment['items'][number]): string {
   if (item.kind === 'call') return item.call.toolCallId

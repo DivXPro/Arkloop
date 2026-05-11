@@ -786,6 +786,7 @@ export function MemorySettings({ accessToken }: Props) {
 
   const rebuildImpression = useCallback(async () => {
     if (!memoryApi?.rebuildImpression) return
+    if (memoryUiActionState.rebuildingImpression) return
     memoryUiActionState.rebuildingImpression = true
     setRebuildingImpression(true)
     try {

@@ -53,7 +53,7 @@ import {
   buildMessageThinkingFromAgentEvents,
   buildTodosFromAgentEvents,
 } from '../agentEventProcessing'
-import { getThreadTodos, setThreadTodos, clearThreadTodos } from '../todoDb'
+import { getThreadTodos, setThreadTodos, clearThreadTodos, type TodoItem } from '../todoDb'
 import {
   buildAssistantTurnFromAgentEvents,
   copSegmentCalls,
@@ -108,7 +108,17 @@ import {
   type UploadedThreadAttachment,
 } from '../api'
 import { readAgentUIEvents, type AgentMessage, useAgentClient } from '../agent-ui'
-import { buildMessageRequest } from '../messageContent'
+import {
+  buildMessageRequest,
+  buildOptimisticUserMessage,
+  buildUserMessageRetryRequest,
+  createClientMessageId,
+  markDeliveryFailed,
+  messageClientMessageId,
+  replaceLocalUserMessage,
+  undeliveredLocalUserMessages,
+  withMessageDeliveryStatus,
+} from '../messageContent'
 import { createQueuedPrompt, type QueuedPrompt } from '../queuedPrompts'
 import {
   addSearchThreadId,
@@ -866,7 +876,6 @@ export const ChatView = memo(function ChatView() {
   const planModeRequestSeqRef = useRef(0)
   const learningModeUpdateRef = useRef<Promise<void> | null>(null)
   const learningModeRequestSeqRef = useRef(0)
-  const [learningModeUpdating, setLearningModeUpdating] = useState(false)
   const [rightPanelVisible, setRightPanelVisible] = useState(false)
   const chatViewRootRef = useRef<HTMLDivElement>(null)
   const rightPanelRatioRef = useRef(0)
@@ -1024,6 +1033,18 @@ export const ChatView = memo(function ChatView() {
   const documentPanelArtifact = activePanel?.type === 'document' ? activePanel.artifact : null
   const agentPanelAgent = activePanel?.type === 'agent' ? activePanel.agent : null
   const resourcePanelResource = activePanel?.type === 'resource' ? activePanel.resource : null
+  // Mirror volatile activePanel-derived values into refs so callbacks passed to
+  // MessageList stay referentially stable when the panel context changes.
+  const documentPanelArtifactKeyRef = useRef(documentPanelArtifact?.artifact.key)
+  useEffect(() => { documentPanelArtifactKeyRef.current = documentPanelArtifact?.artifact.key }, [documentPanelArtifact?.artifact.key])
+  const codePanelExecutionIdRef = useRef(codePanelExecution?.id)
+  useEffect(() => { codePanelExecutionIdRef.current = codePanelExecution?.id }, [codePanelExecution?.id])
+  const agentPanelAgentIdRef = useRef(agentPanelAgent?.id)
+  useEffect(() => { agentPanelAgentIdRef.current = agentPanelAgent?.id }, [agentPanelAgent?.id])
+  const resourcePanelResourceRef = useRef(resourcePanelResource)
+  useEffect(() => { resourcePanelResourceRef.current = resourcePanelResource }, [resourcePanelResource])
+  const sourcePanelMessageIdRef = useRef(sourcePanelMessageId)
+  useEffect(() => { sourcePanelMessageIdRef.current = sourcePanelMessageId }, [sourcePanelMessageId])
   const setSourcePanelMessageId = useCallback<React.Dispatch<React.SetStateAction<string | null>>>((value) => {
     const next = typeof value === 'function' ? value(sourcePanelMessageId) : value
     if (next) openSourcePanel(next)
@@ -1316,6 +1337,7 @@ export const ChatView = memo(function ChatView() {
             ))
           )
         let replayThreadHandoff: ReturnType<typeof readThreadRunHandoff> = null
+        let replayedTodos: TodoItem[] = []
         if (shouldReplayLatestRun && latest) {
           try {
             const replayEvents = await readAgentUIEvents(
@@ -1436,9 +1458,8 @@ export const ChatView = memo(function ChatView() {
                 searchSteps: replaySearchSteps,
               }
             }
-            const replayedTodos = buildTodosFromAgentEvents(replayEvents)
+            replayedTodos = buildTodosFromAgentEvents(replayEvents)
             if (replayedTodos.length > 0) {
-              setWorkTodos(replayedTodos)
               setThreadTodos(threadId, replayedTodos).catch(() => {})
             }
             if (lastAssistant && (latest.status === 'completed' || latest.status === 'cancelled' || latest.status === 'interrupted')) {
@@ -1486,6 +1507,9 @@ export const ChatView = memo(function ChatView() {
         if (latest?.status === 'failed') {
           setTerminalRunDisplayId(latest.run_id)
           setTerminalRunHandoffStatus('failed')
+        }
+        if (replayedTodos.length > 0) {
+          setWorkTodos(replayedTodos)
         }
 
         const restoreThreadHandoffUi = (
@@ -2035,7 +2059,7 @@ export const ChatView = memo(function ChatView() {
 
   const handleSend = useCallback(async (e: React.FormEvent<HTMLFormElement>, personaKey: string, modelOverride?: string) => {
     e.preventDefault()
-    if (sending || !threadId) return
+    if (!threadId) return
     if (editingQueuedPromptId) {
       saveQueuedPromptEdit()
       return
@@ -2066,6 +2090,29 @@ export const ChatView = memo(function ChatView() {
       !isInterruptedRunStatus(terminalRunHandoffStatus) &&
       !isInterruptedRunStatus(lastAssistantTerminalStatus)
 
+    if (sending && !isStreaming) {
+      const text = draft.trim()
+      if (text || attachments.length > 0) {
+        const queuedAttachments = queueReadyAttachments(attachments)
+        if (!queuedAttachments) {
+          setError({ message: 'Attachments are still uploading.' })
+          return
+        }
+        appendQueuedPrompt(createQueuedPrompt({
+          text,
+          attachments: queuedAttachments,
+          personaKey,
+          modelOverride,
+          workDir: resolveThreadWorkFolder(threadId),
+          reasoningMode: resolveReasoningMode(),
+        }))
+        attachments.forEach((attachment) => revokeDraftAttachment(attachment))
+        setAttachments([])
+        chatInputRef.current?.clear()
+      }
+      return
+    }
+
     if (isStreaming) {
       const text = draft.trim()
       if (text || attachments.length > 0) {
@@ -2093,12 +2140,7 @@ export const ChatView = memo(function ChatView() {
     if (!text && attachments.length === 0) return
 
     const hint = chooseThinkingHint(t.copThinkingHints)
-    setSending(true)
-    setPendingThinking(true)
-    setThinkingHint(hint)
-    setError(null)
-    setInjectionBlocked(null)
-    injectionBlockedRunIdRef.current = null
+    const deliveryAttemptKeys: Array<{ messageId: string; clientMessageId: string }> = []
 
     try {
       const uploadAttachments = async () => {
@@ -2112,6 +2154,12 @@ export const ChatView = memo(function ChatView() {
       }
 
       if (pendingIncognito && messages.length > 0) {
+        setSending(true)
+        setPendingThinking(true)
+        setThinkingHint(hint)
+        setError(null)
+        setInjectionBlocked(null)
+        injectionBlockedRunIdRef.current = null
         await waitForThreadModeUpdates()
         const lastMessageId = messages[messages.length - 1].id
         const forked = await forkThread(accessToken, threadId, lastMessageId, true)
@@ -2147,23 +2195,24 @@ export const ChatView = memo(function ChatView() {
         return
       }
 
-      const uploaded = await uploadAttachments()
-      const message = await agentClient.createMessage({
-        threadId,
-        request: buildMessageRequest(text, uploaded),
-      })
-      invalidateMessageSync()
-      const syncedMessages = terminalRunIdToSync
-        ? await readConsistentMessages(terminalRunIdToSync)
-        : null
-      setUserEnterMessageId(message.id)
-      setMessages((prev) => {
-        const base = syncedMessages && syncedMessages.length > 0 ? syncedMessages : prev
-        return base.some((item) => item.id === message.id) ? base : [...base, message]
-      })
-      if (terminalRunIdToSync && syncedMessages?.some((item) => item.role === 'assistant' && item.streamId === terminalRunIdToSync)) {
-        clearThreadRunHandoff(threadId)
+      const uploaded = queueReadyAttachments(attachments)
+      if (!uploaded) {
+        setError({ message: 'Attachments are still uploading.' })
+        return
       }
+      const clientMessageId = createClientMessageId()
+      const request = buildMessageRequest(text, uploaded)
+      const localMessage = buildOptimisticUserMessage(request, clientMessageId)
+
+      setSending(true)
+      setPendingThinking(true)
+      setThinkingHint(hint)
+      setError(null)
+      setInjectionBlocked(null)
+      injectionBlockedRunIdRef.current = null
+      invalidateMessageSync()
+      setUserEnterMessageId(localMessage.id)
+      setMessages((prev) => [...prev, localMessage])
       if (shouldPinNewPrompt) {
         activateAnchor()
       } else {
@@ -2172,8 +2221,40 @@ export const ChatView = memo(function ChatView() {
       attachments.forEach((attachment) => revokeDraftAttachment(attachment))
       chatInputRef.current?.clear()
       setAttachments([])
+
+      let lastCreatedMessage: AgentMessage | null = null
+      const messagesToCreate = undeliveredLocalUserMessages([...messages, localMessage])
+      for (const messageToCreate of messagesToCreate) {
+        const retryClientMessageId = messageClientMessageId(messageToCreate) ?? createClientMessageId()
+        deliveryAttemptKeys.push({ messageId: messageToCreate.id, clientMessageId: retryClientMessageId })
+        setMessages((prev) => prev.map((item) =>
+          item.id === messageToCreate.id
+            ? withMessageDeliveryStatus(item, 'pending', retryClientMessageId)
+            : item,
+        ))
+        const created = await agentClient.createMessage({
+          threadId,
+          request: buildUserMessageRetryRequest(messageToCreate, retryClientMessageId),
+        })
+        invalidateMessageSync()
+        setUserEnterMessageId(created.id)
+        setMessages((prev) => replaceLocalUserMessage(prev, messageToCreate.id, retryClientMessageId, created))
+        lastCreatedMessage = created
+      }
+
+      if (!lastCreatedMessage) return
+      const syncedMessages = terminalRunIdToSync
+        ? await readConsistentMessages(terminalRunIdToSync)
+        : null
+      setMessages((prev) => {
+        const base = syncedMessages && syncedMessages.length > 0 ? syncedMessages : prev
+        return base
+      })
+      if (terminalRunIdToSync && syncedMessages?.some((item) => item.role === 'assistant' && item.streamId === terminalRunIdToSync)) {
+        clearThreadRunHandoff(threadId)
+      }
       injectionBlockedRunIdRef.current = null
-      noResponseMsgIdRef.current = message.id
+      noResponseMsgIdRef.current = lastCreatedMessage.id
 
       await waitForThreadModeUpdates()
       const run = await agentClient.createRun({
@@ -2194,6 +2275,7 @@ export const ChatView = memo(function ChatView() {
         onLoggedOut()
         return
       }
+      setMessages((prev) => markDeliveryFailed(prev, deliveryAttemptKeys))
       setError(normalizeError(err))
     } finally {
       setSending(false)
@@ -2309,8 +2391,11 @@ export const ChatView = memo(function ChatView() {
   }, [threadId, workPanelFolder])
 
   useEffect(() => {
-    if (activePanel) setRightPanelVisible(true)
-  }, [activePanel])
+    if (activePanel) {
+      setRightPanelVisible(true)
+      setRightPanelOpen(true)
+    }
+  }, [activePanel, setRightPanelOpen])
 
   useEffect(() => {
     setRightPanelOpen(isPanelOpen)
@@ -2567,84 +2652,86 @@ export const ChatView = memo(function ChatView() {
     }
   }, [accessToken, closeRightPanelTab, resolvedMessageSources])
 
-  const rightPanelRenderedTabs = useMemo<RightPanelTab[]>(() => {
-    const tabs: RightPanelTab[] = []
-    tabs.push({
-      id: 'web',
-      kind: 'web',
-      title: webPanelResource ? resourceTitle(webPanelResource) : t.rightPanel.browser,
-      closable: !!webPanelResource,
-      hideTitle: !webPanelResource,
-      icon: <BrowserSiteIcon url={webPanelResource?.url} faviconUrl={webPanelResource?.faviconUrl} size={rightPanelIconSize} />,
+  // Individual tab memos — when only one dep changes, other tabs stay stable.
+  // This prevents e.g. adding a document tab from rebuilding the files tab (incl. LocalFileTree).
+  const webPanelTab = useMemo<RightPanelTab>(() => ({
+    id: 'web',
+    kind: 'web',
+    title: webPanelResource ? resourceTitle(webPanelResource) : t.rightPanel.browser,
+    closable: !!webPanelResource,
+    hideTitle: !webPanelResource,
+    icon: <BrowserSiteIcon url={webPanelResource?.url} faviconUrl={webPanelResource?.faviconUrl} size={rightPanelIconSize} />,
+    content: (
+      <ResourcePreviewPanel
+        resource={webPanelResource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}
+        accessToken={accessToken}
+        onResourceChange={(resource) => {
+          if (resource.kind === 'browser') setWebPanelResource(resource)
+        }}
+      />
+    ),
+  }), [webPanelResource, accessToken, t.rightPanel.browser])
+
+  const extraBrowserPanelTabs = useMemo<RightPanelTab[]>(() =>
+    extraBrowserTabs.map((browserTab) => ({
+      id: browserTab.id,
+      kind: 'web' as const,
+      title: browserTab.resource ? resourceTitle(browserTab.resource) : t.rightPanel.browser,
+      closable: true,
+      hideTitle: !browserTab.resource,
+      icon: <BrowserSiteIcon url={browserTab.resource?.url} faviconUrl={browserTab.resource?.faviconUrl} size={rightPanelIconSize} />,
       content: (
         <ResourcePreviewPanel
-          resource={webPanelResource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}
+          resource={browserTab.resource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}
           accessToken={accessToken}
           onResourceChange={(resource) => {
-            if (resource.kind === 'browser') setWebPanelResource(resource)
+            if (resource.kind !== 'browser') return
+            setExtraBrowserTabs((current) => current.map((tab) => (
+              tab.id === browserTab.id ? { ...tab, resource } : tab
+            )))
           }}
         />
       ),
-    })
-    for (const browserTab of extraBrowserTabs) {
-      tabs.push({
-        id: browserTab.id,
-        kind: 'web',
-        title: browserTab.resource ? resourceTitle(browserTab.resource) : t.rightPanel.browser,
-        closable: true,
-        hideTitle: !browserTab.resource,
-        icon: <BrowserSiteIcon url={browserTab.resource?.url} faviconUrl={browserTab.resource?.faviconUrl} size={rightPanelIconSize} />,
-        content: (
-          <ResourcePreviewPanel
-            resource={browserTab.resource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}
-            accessToken={accessToken}
-            onResourceChange={(resource) => {
-              if (resource.kind !== 'browser') return
-              setExtraBrowserTabs((current) => current.map((tab) => (
-                tab.id === browserTab.id ? { ...tab, resource } : tab
-              )))
-            }}
-          />
-        ),
-      })
+    })),
+  [extraBrowserTabs, accessToken, t.rightPanel.browser])
+
+  const filesPanelTab = useMemo<RightPanelTab | null>(() => {
+    if (!workPanelFolder?.trim()) return null
+    const filesPreviewTitle = filesPreviewResource ? resourceTitle(filesPreviewResource) : t.rightPanel.files
+    return {
+      id: 'files',
+      kind: 'files',
+      title: filesPreviewTitle,
+      closable: false,
+      icon: localFileTabIcon(filesPreviewResource),
+      hideTitle: !filesPreviewResource,
+      content: (
+        <LocalFilesPanel
+          rootPath={workPanelFolder}
+          accessToken={accessToken}
+          previewResource={filesPreviewResource}
+          onPreviewResourceChange={setFilesPreviewResource}
+          onPinResource={pinLocalFileResource}
+        />
+      ),
     }
-    if (workPanelFolder?.trim()) {
-      const filesPreviewTitle = filesPreviewResource ? resourceTitle(filesPreviewResource) : t.rightPanel.files
-      tabs.push({
-        id: 'files',
-        kind: 'files',
-        title: filesPreviewTitle,
-        closable: false,
-        icon: localFileTabIcon(filesPreviewResource),
-        hideTitle: !filesPreviewResource,
-        content: (
-          <LocalFilesPanel
-            rootPath={workPanelFolder}
-            accessToken={accessToken}
-            previewResource={filesPreviewResource}
-            onPreviewResourceChange={setFilesPreviewResource}
-            onPinResource={pinLocalFileResource}
-          />
-        ),
-      })
-    }
+  }, [workPanelFolder, accessToken, filesPreviewResource, pinLocalFileResource, setFilesPreviewResource, t.rightPanel.files])
+
+  const resourcePanelTabs = useMemo<RightPanelTab[]>(() => {
+    const result: RightPanelTab[] = []
     for (const tab of rightPanelTabs) {
       const rendered = buildStoredPanelTab(tab)
-      if (rendered) tabs.push(rendered)
+      if (rendered) result.push(rendered)
     }
+    return result
+  }, [rightPanelTabs, buildStoredPanelTab])
+
+  const rightPanelRenderedTabs = useMemo<RightPanelTab[]>(() => {
+    const tabs: RightPanelTab[] = [webPanelTab, ...extraBrowserPanelTabs]
+    if (filesPanelTab) tabs.push(filesPanelTab)
+    tabs.push(...resourcePanelTabs)
     return tabs
-  }, [
-    accessToken,
-    buildStoredPanelTab,
-    extraBrowserTabs,
-    filesPreviewResource,
-    pinLocalFileResource,
-    rightPanelTabs,
-    t.rightPanel.browser,
-    t.rightPanel.files,
-    webPanelResource,
-    workPanelFolder,
-  ])
+  }, [webPanelTab, extraBrowserPanelTabs, filesPanelTab, resourcePanelTabs])
 
   const effectiveRightPanelTabId = rightPanelRenderedTabs.some((tab) => tab.id === activeRightPanelTabId)
     ? activeRightPanelTabId
@@ -2712,7 +2799,7 @@ export const ChatView = memo(function ChatView() {
 
   const openCodePanel = useCallback((ce: CodeExecution) => {
     const tabId = `code:${ce.id}`
-    if (codePanelExecution?.id === ce.id) {
+    if (codePanelExecutionIdRef.current === ce.id) {
       if (isPanelOpenRef.current && effectiveRightPanelTabIdRef.current === tabId) {
         closeRightPanelTab(tabId)
         setRightPanelVisible(false)
@@ -2723,12 +2810,12 @@ export const ChatView = memo(function ChatView() {
       return
     }
     openCodePanelState(ce)
-  }, [closeRightPanelTab, codePanelExecution?.id, openCodePanelState])
+  }, [closeRightPanelTab, openCodePanelState])
 
   const openDocumentPanel = useCallback((artifact: ArtifactRef, options?: { trigger?: HTMLElement | null; artifacts?: ArtifactRef[]; runId?: string }) => {
     stabilizeDocumentPanelScroll(options?.trigger)
     const tabId = `resource:artifact:${artifact.key}`
-    if (documentPanelArtifact?.artifact.key === artifact.key) {
+    if (documentPanelArtifactKeyRef.current === artifact.key) {
       if (isPanelOpenRef.current && effectiveRightPanelTabIdRef.current === tabId) {
         closeRightPanelTab(tabId)
         setRightPanelVisible(false)
@@ -2743,7 +2830,7 @@ export const ChatView = memo(function ChatView() {
       artifacts: options?.artifacts ?? [],
       runId: options?.runId,
     })
-  }, [closeRightPanelTab, documentPanelArtifact?.artifact.key, openDocumentPanelState, stabilizeDocumentPanelScroll])
+  }, [closeRightPanelTab, openDocumentPanelState, stabilizeDocumentPanelScroll])
 
   const openResourcePanel = useCallback((resource: ResourceRef, options?: { trigger?: HTMLElement | null; artifacts?: ArtifactRef[]; runId?: string }) => {
     stabilizeDocumentPanelScroll(options?.trigger)
@@ -2753,7 +2840,8 @@ export const ChatView = memo(function ChatView() {
       return
     }
     const tabId = resourceTabId(resource)
-    if (resourcePanelResource && resourceTabId(resourcePanelResource) === tabId) {
+    const current = resourcePanelResourceRef.current
+    if (current && resourceTabId(current) === tabId) {
       if (isPanelOpenRef.current && effectiveRightPanelTabIdRef.current === tabId) {
         closeRightPanelTab(tabId)
         setRightPanelVisible(false)
@@ -2780,7 +2868,7 @@ export const ChatView = memo(function ChatView() {
       runId: options?.runId,
     })
     openResourcePanelState(resource)
-  }, [closeRightPanelTab, openResourcePanelState, resourcePanelResource, setBrowserResourceForCurrentTab, stabilizeDocumentPanelScroll, upsertRightPanelTab])
+  }, [closeRightPanelTab, openResourcePanelState, setBrowserResourceForCurrentTab, stabilizeDocumentPanelScroll, upsertRightPanelTab])
 
   // COP step 计数：timeline 中所有非 finished 的点
   const dedupedTopLevelCodeExecutions = useMemo(() => {
@@ -2947,7 +3035,6 @@ export const ChatView = memo(function ChatView() {
   const handleToggleLearningMode = useCallback(async (currentMode: boolean) => {
     if (!threadId || learningModeUpdateRef.current) return
     const requestSeq = ++learningModeRequestSeqRef.current
-    setLearningModeUpdating(true)
     const updatePromise: Promise<void> = updateThreadLearningMode(accessToken, threadId, !currentMode).then((thread) => {
       if (learningModeRequestSeqRef.current === requestSeq) {
         onThreadUpserted(thread)
@@ -2960,7 +3047,6 @@ export const ChatView = memo(function ChatView() {
     }).finally(() => {
       if (learningModeUpdateRef.current === updatePromise) {
         learningModeUpdateRef.current = null
-        setLearningModeUpdating(false)
       }
     })
     learningModeUpdateRef.current = updatePromise
@@ -2980,7 +3066,7 @@ export const ChatView = memo(function ChatView() {
       onSubmit={handleSend}
       onCancel={handleCancel}
       placeholder={isStreaming ? t.followUpPlaceholder : t.replyPlaceholder}
-      disabled={sending}
+      disabled={false}
       isStreaming={isStreaming}
       canCancel={canCancel}
       cancelSubmitting={cancelSubmitting}
@@ -3003,10 +3089,9 @@ export const ChatView = memo(function ChatView() {
       planMode={currentThread?.collaboration_mode === 'plan'}
       onTogglePlanMode={handleTogglePlanMode}
       learningModeEnabled={!!currentThread?.learning_mode_enabled}
-      learningModeUpdating={learningModeUpdating}
       onToggleLearningMode={handleToggleLearningMode}
     />
-  ), [attachments, sending, isStreaming, canCancel, cancelSubmitting, effectiveAppMode, isSearchThread, hasMessages, messagesLoading, threadId, accessToken, me?.id, t.followUpPlaceholder, t.replyPlaceholder, handleSend, handleCancel, handleAttachFiles, handlePasteContent, handleRemoveAttachment, handleAsrError, handlePersonaChange, onOpenSettings, editingQueuedPromptId, cancelQueuedPromptEdit, currentThread?.collaboration_mode, currentThread?.learning_mode_enabled, learningModeUpdating, handleTogglePlanMode, handleToggleLearningMode])
+  ), [attachments, isStreaming, canCancel, cancelSubmitting, effectiveAppMode, isSearchThread, hasMessages, messagesLoading, threadId, accessToken, me?.id, t.followUpPlaceholder, t.replyPlaceholder, handleSend, handleCancel, handleAttachFiles, handlePasteContent, handleRemoveAttachment, handleAsrError, handlePersonaChange, onOpenSettings, editingQueuedPromptId, cancelQueuedPromptEdit, currentThread?.collaboration_mode, currentThread?.learning_mode_enabled, handleTogglePlanMode, handleToggleLearningMode])
 
   const renderLiveCopItems = useCallback((
     seg: Extract<AssistantTurnSegment, { type: 'cop' }>,
@@ -3238,6 +3323,97 @@ export const ChatView = memo(function ChatView() {
     workPanelFolder,
   ])
 
+  // Message list area: memoized so panel state changes (activePanel/isPanelOpen)
+  // don't force the full message tree to reconcile. Padding values are driven by
+  // CSS custom properties set on the parent div.
+  const messageListArea = useMemo(() => (
+    <div
+      ref={scrollContainerRef}
+      onScroll={handleScrollContainerScroll}
+      className="theme-surface-page chat-scroll-hidden relative flex-1 min-h-0 overflow-y-auto bg-[var(--c-bg-page)] [scrollbar-gutter:stable]"
+      style={{ contain: 'layout paint style' }}
+    >
+      <div
+        style={{
+          maxWidth: isWorkMode ? 1000 : 800,
+          margin: '0 auto',
+          paddingTop: '50px',
+          paddingRight: 'calc(var(--chat-message-horizontal-padding) + var(--main-content-axis-padding-right, 0px))',
+          paddingBottom: 'var(--chat-input-area-height)',
+          paddingLeft: 'calc(var(--chat-message-horizontal-padding) + var(--main-content-axis-padding-left, 0px))',
+          gap: isWorkMode ? 0 : undefined,
+          transition: `padding ${rightPanelLayoutTransitionCss}`,
+        }}
+        className="flex w-full flex-col gap-6"
+      >
+        {messagesLoading ? (
+          <ChatSkeleton isWorkMode={isWorkMode} />
+        ) : (
+          <>
+            {contextCompactBar && (
+              <ContextCompactBar
+                variant={contextCompactBar}
+                runningLabel={t.desktopSettings.chatCompactBannerRunning}
+                doneLabel={t.desktopSettings.chatCompactBannerDone}
+                trimLabel={t.desktopSettings.chatCompactBannerTrim}
+                llmFailedLabel={t.desktopSettings.chatCompactBannerLlmFailed}
+              />
+            )}
+            <CopTimelineLocalExpansionProvider stabilizeScroll={stabilizeDocumentPanelScroll}>
+              <MessageList
+              isWorkMode={isWorkMode}
+              lastTurnStartIdx={lastTurnStartIdx}
+              lastTurnRef={lastUserMsgRef}
+              lastUserPromptRef={lastUserPromptRef}
+              lastTurnChildren={lastTurnChildren}
+              showRunDetailButton={showRunDetailButton}
+              currentRunCopHeaderOverride={currentRunCopHeaderOverride}
+              handleRetryUserMessage={handleRetryUserMessage}
+              handleEditMessage={handleEditMessage}
+              handleFork={handleFork}
+              handleArtifactAction={handleArtifactAction}
+              openDocumentPanel={openDocumentPanel}
+              openResourcePanel={openResourcePanel}
+              openCodePanel={openCodePanel}
+              openAgentPanel={openAgentPanelState}
+              sourcePanelMessageId={sourcePanelMessageId}
+              setRunDetailPanelRunId={setRunDetailPanelRunId}
+              clearUserEnterAnimation={clearUserEnterAnimation}
+              workFolder={workPanelFolder}
+              />
+            </CopTimelineLocalExpansionProvider>
+          </>
+        )}
+      </div>
+      <div ref={spacerRef} style={{ flexShrink: 0, overflowAnchor: 'none' }} />
+    </div>
+  ), [
+    contextCompactBar,
+    currentRunCopHeaderOverride,
+    handleArtifactAction,
+    handleEditMessage,
+    handleFork,
+    handleRetryUserMessage,
+    handleScrollContainerScroll,
+    isWorkMode,
+    lastTurnChildren,
+    lastTurnStartIdx,
+    messagesLoading,
+    openAgentPanelState,
+    openCodePanel,
+    openDocumentPanel,
+    openResourcePanel,
+    scrollContainerRef,
+    sourcePanelMessageId,
+    setRunDetailPanelRunId,
+    stabilizeDocumentPanelScroll,
+    t.desktopSettings.chatCompactBannerDone,
+    t.desktopSettings.chatCompactBannerRunning,
+    t.desktopSettings.chatCompactBannerTrim,
+    t.desktopSettings.chatCompactBannerLlmFailed,
+    workPanelFolder,
+  ])
+
   return (
     <div ref={chatViewRootRef} className="theme-surface-page relative flex min-w-0 flex-1 overflow-hidden bg-[var(--c-bg-page)]">
       {/* Chat column + right panel: starts below the desktop Chat/Work titlebar. */}
@@ -3245,74 +3421,15 @@ export const ChatView = memo(function ChatView() {
         <div
           className="relative flex flex-1 min-w-0 flex-col"
           style={{
+            '--chat-message-horizontal-padding': messageHorizontalPadding,
             minWidth: isPanelOpen ? chatViewMinWidth : 0,
             transition: `min-width ${rightPanelLayoutTransitionCss}`,
-          }}
+          } as React.CSSProperties}
         >
           <ChatTitleMenu />
           <div className="pointer-events-none absolute inset-x-0 top-[60px] z-10 h-10" style={{ background: 'linear-gradient(to bottom, var(--c-bg-page-gradient-stop, var(--c-bg-page)), transparent)' }} />
           {/* 消息列表 */}
-          <div
-            ref={scrollContainerRef}
-            onScroll={handleScrollContainerScroll}
-            className="theme-surface-page chat-scroll-hidden relative flex-1 min-h-0 overflow-y-auto bg-[var(--c-bg-page)] [scrollbar-gutter:stable]"
-            style={{ contain: 'layout paint style' }}
-          >
-        <div
-          style={{
-            maxWidth: isWorkMode ? 1000 : 800,
-            margin: '0 auto',
-            paddingTop: '50px',
-            paddingRight: `calc(${messageHorizontalPadding} + var(--main-content-axis-padding-right, 0px))`,
-            paddingBottom: 'var(--chat-input-area-height)',
-            paddingLeft: `calc(${messageHorizontalPadding} + var(--main-content-axis-padding-left, 0px))`,
-            gap: isWorkMode ? 0 : undefined,
-            transition: `padding ${rightPanelLayoutTransitionCss}`,
-          }}
-          className="flex w-full flex-col gap-6"
-        >
-          {messagesLoading ? (
-            <ChatSkeleton isWorkMode={isWorkMode} />
-          ) : (
-            <>
-              {contextCompactBar && (
-                <ContextCompactBar
-                  variant={contextCompactBar}
-                  runningLabel={t.desktopSettings.chatCompactBannerRunning}
-                  doneLabel={t.desktopSettings.chatCompactBannerDone}
-                  trimLabel={t.desktopSettings.chatCompactBannerTrim}
-                  llmFailedLabel={t.desktopSettings.chatCompactBannerLlmFailed}
-                />
-              )}
-              <CopTimelineLocalExpansionProvider stabilizeScroll={stabilizeDocumentPanelScroll}>
-                <MessageList
-                isWorkMode={isWorkMode}
-                lastTurnStartIdx={lastTurnStartIdx}
-                lastTurnRef={lastUserMsgRef}
-                lastUserPromptRef={lastUserPromptRef}
-                lastTurnChildren={lastTurnChildren}
-                showRunDetailButton={showRunDetailButton}
-                currentRunCopHeaderOverride={currentRunCopHeaderOverride}
-                handleRetryUserMessage={handleRetryUserMessage}
-                handleEditMessage={handleEditMessage}
-                handleFork={handleFork}
-                handleArtifactAction={handleArtifactAction}
-                openDocumentPanel={openDocumentPanel}
-                openResourcePanel={openResourcePanel}
-                openCodePanel={openCodePanel}
-                openAgentPanel={openAgentPanelState}
-                sourcePanelMessageId={sourcePanelMessageId}
-                setRunDetailPanelRunId={setRunDetailPanelRunId}
-                clearUserEnterAnimation={clearUserEnterAnimation}
-                workFolder={workPanelFolder}
-                />
-              </CopTimelineLocalExpansionProvider>
-
-            </>
-          )}
-        </div>
-        <div ref={spacerRef} style={{ flexShrink: 0, overflowAnchor: 'none' }} />
-      </div>
+          {messageListArea}
 
       {/* 输入区域 */}
       <div

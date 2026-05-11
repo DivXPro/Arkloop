@@ -800,7 +800,6 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 	}
 	middlewares = append(middlewares,
 		desktopRouting(e.auxRouter, e.auxGateway, e.emitDebugEvents, e.db, e.routingLoader, runsRepo, eventsRepo),
-		pipeline.NewModelIdentityMiddleware(),
 		desktopObservedStage("channel_group_context_trim", eventsRepo, pipeline.NewChannelGroupContextTrimMiddleware(pipeline.GroupContextTrimDeps{
 			Pool:            e.db,
 			MessagesRepo:    data.MessagesRepository{},
@@ -818,6 +817,7 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 			EventsRepo:          data.DesktopRunEventsRepository{},
 		}),
 		pipeline.NewHeartbeatPrepareMiddleware(),
+		pipeline.NewModelIdentityMiddleware(),
 		pipeline.NewConditionalToolsMiddleware(),
 		pipeline.NewToolBuildMiddleware(),
 		pipeline.NewToolLoopDetectionMiddleware(),
@@ -1353,6 +1353,25 @@ func desktopChannelContext(db data.DesktopDB) pipeline.RunMiddleware {
 			}
 		}
 		rc.ChannelContext = channelCtx
+		if db != nil && rc.Run.ThreadID != uuid.Nil {
+			overrides := loadDesktopThreadRunOverrides(ctx, db, rc.Run.ThreadID)
+			if overrides.DefaultModel != "" {
+				if rc.InputJSON == nil {
+					rc.InputJSON = map[string]any{}
+				}
+				if _, ok := rc.InputJSON["model"]; !ok {
+					if _, higher := rc.InputJSON["output_model_key"]; !higher {
+						rc.InputJSON["model"] = overrides.DefaultModel
+					}
+				}
+			}
+			if overrides.ReasoningMode != "" && normalizeDesktopRunReasoningMode(rc.InputJSON["reasoning_mode"]) == "" {
+				rc.ReasoningMode = overrides.ReasoningMode
+				if rc.AgentConfig != nil {
+					rc.AgentConfig.ReasoningMode = overrides.ReasoningMode
+				}
+			}
+		}
 		rc.ChannelToolSurface = pipeline.NewChannelToolSurfaceFromContext(channelCtx)
 		if channelCtx.SenderUserID != nil {
 			rc.UserID = channelCtx.SenderUserID
@@ -2247,6 +2266,32 @@ func loadDesktopChannelConfigJSON(ctx context.Context, db data.DesktopDB, channe
 	return configJSON, nil
 }
 
+type desktopThreadRunOverrides struct {
+	DefaultModel  string
+	ReasoningMode string
+}
+
+func loadDesktopThreadRunOverrides(ctx context.Context, db data.DesktopDB, threadID uuid.UUID) desktopThreadRunOverrides {
+	if db == nil || threadID == uuid.Nil {
+		return desktopThreadRunOverrides{}
+	}
+	var raw []byte
+	if err := db.QueryRow(ctx, `SELECT COALESCE(config_json, '{}') FROM threads WHERE id = $1`, threadID.String()).Scan(&raw); err != nil {
+		return desktopThreadRunOverrides{}
+	}
+	var payload struct {
+		DefaultModel  string `json:"default_model"`
+		ReasoningMode string `json:"reasoning_mode"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return desktopThreadRunOverrides{}
+	}
+	return desktopThreadRunOverrides{
+		DefaultModel:  strings.TrimSpace(payload.DefaultModel),
+		ReasoningMode: normalizeDesktopRunReasoningMode(payload.ReasoningMode),
+	}
+}
+
 func loadDesktopDeliveryChannel(ctx context.Context, db data.DesktopDB, channelID uuid.UUID) (*desktopDeliveryChannelRecord, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db must not be nil")
@@ -3013,13 +3058,7 @@ func desktopPersonaResolution(
 			rc.StreamThinking = def.StreamThinking
 			rc.ToolDenylist = append([]string(nil), def.ToolDenylist...)
 			if len(def.ToolAllowlist) > 0 {
-				narrowed := make(map[string]struct{}, len(def.ToolAllowlist))
-				for _, name := range def.ToolAllowlist {
-					if pipeline.ToolAllowed(rc.AllowlistSet, rc.ToolRegistry, name) {
-						narrowed[name] = struct{}{}
-					}
-				}
-				rc.AllowlistSet = narrowed
+				rc.AllowlistSet = pipeline.NarrowAllowlistPreservingMCP(rc.AllowlistSet, rc.ToolRegistry, def.ToolAllowlist, rc.MCPToolNames)
 			}
 			for _, name := range def.ToolDenylist {
 				pipeline.RemoveToolOrGroup(rc.AllowlistSet, rc.ToolRegistry, name)
