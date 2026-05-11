@@ -11,7 +11,7 @@ describe('getOpenDesignInstallPaths', () => {
 
     expect(paths.runtimeRoot).toBe('/Users/huhui/.arkloop/integrations/open-design')
     expect(paths.nodeBinary).toBe('/Users/huhui/.arkloop/integrations/open-design/resources/bin/node')
-    expect(paths.entryScript).toBe('/Users/huhui/.arkloop/integrations/open-design/bundle/node_modules/@open-design/packaged/dist/headless.mjs')
+    expect(paths.entryScript).toBe('/Users/huhui/.arkloop/integrations/open-design/bundle/prebundled/headless.mjs')
     expect(paths.readyFile).toBe('/Users/huhui/.arkloop/integrations/open-design/data/namespaces/default/runtime/web-root.json')
   })
 })

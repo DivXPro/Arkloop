@@ -21,15 +21,7 @@ export function getOpenDesignInstallPaths(
     resourcesRoot: path.join(runtimeRoot, 'resources'),
     dataRoot,
     nodeBinary: path.join(runtimeRoot, 'resources', 'bin', 'node'),
-    entryScript: path.join(
-      runtimeRoot,
-      'bundle',
-      'node_modules',
-      '@open-design',
-      'packaged',
-      'dist',
-      'headless.mjs',
-    ),
+    entryScript: path.join(runtimeRoot, 'bundle', 'prebundled', 'headless.mjs'),
     readyFile: path.join(
       dataRoot,
       'namespaces',
