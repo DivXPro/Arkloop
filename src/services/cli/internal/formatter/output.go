@@ -51,12 +51,13 @@ type SessionView struct {
 }
 
 type ChatStatusView struct {
-	Host      string `json:"host"`
-	SessionID string `json:"session_id"`
-	Model     string `json:"model"`
-	Persona   string `json:"persona"`
-	WorkDir   string `json:"work_dir"`
-	Timeout   string `json:"timeout"`
+	Host       string `json:"host"`
+	SessionID  string `json:"session_id"`
+	Model      string `json:"model"`
+	Persona    string `json:"persona"`
+	WorkDir    string `json:"work_dir"`
+	Timeout    string `json:"timeout"`
+	Incognito  bool   `json:"incognito"`
 }
 
 func PrintStatus(w io.Writer, outputFormat string, view StatusView) error {
@@ -165,15 +166,20 @@ func PrintSessions(w io.Writer, outputFormat string, views []SessionView) error 
 }
 
 func PrintChatStatus(w io.Writer, view ChatStatusView) error {
+	incognitoText := "off"
+	if view.Incognito {
+		incognitoText = "on"
+	}
 	_, err := fmt.Fprintf(
 		w,
-		"host: %s\nsession id: %s\nmodel: %s\npersona: %s\nwork-dir: %s\ntimeout: %s\n",
+		"host: %s\nsession id: %s\nmodel: %s\npersona: %s\nwork-dir: %s\ntimeout: %s\nincognito: %s\n",
 		displayText(view.Host, "-"),
 		displayText(view.SessionID, "new"),
 		displayText(view.Model, "default"),
 		displayText(view.Persona, "default"),
 		displayText(view.WorkDir, "-"),
 		displayText(view.Timeout, "none"),
+		incognitoText,
 	)
 	return err
 }

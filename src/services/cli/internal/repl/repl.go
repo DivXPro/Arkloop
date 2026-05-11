@@ -17,17 +17,18 @@ import (
 )
 
 type REPL struct {
-	client   *apiclient.Client
-	params   apiclient.RunParams
-	renderer *renderer.Renderer
-	threadID string
-	timeout  time.Duration
-	stdout   io.Writer
-	stderr   io.Writer
+	client    *apiclient.Client
+	params    apiclient.RunParams
+	renderer  *renderer.Renderer
+	threadID  string
+	incognito bool
+	timeout   time.Duration
+	stdout    io.Writer
+	stderr    io.Writer
 }
 
-func NewREPL(client *apiclient.Client, params apiclient.RunParams, threadID string, timeout time.Duration) *REPL {
-	return newREPLWithWriters(client, params, threadID, timeout, os.Stdout, os.Stderr)
+func NewREPL(client *apiclient.Client, params apiclient.RunParams, threadID string, timeout time.Duration, incognito bool) *REPL {
+	return newREPLWithWriters(client, params, threadID, timeout, incognito, os.Stdout, os.Stderr)
 }
 
 func newREPLWithWriters(
@@ -35,17 +36,19 @@ func newREPLWithWriters(
 	params apiclient.RunParams,
 	threadID string,
 	timeout time.Duration,
+	incognito bool,
 	stdout io.Writer,
 	stderr io.Writer,
 ) *REPL {
 	return &REPL{
-		client:   client,
-		params:   params,
-		renderer: renderer.NewRenderer(stdout),
-		threadID: threadID,
-		timeout:  timeout,
-		stdout:   stdout,
-		stderr:   stderr,
+		client:    client,
+		params:    params,
+		renderer:  renderer.NewRenderer(stdout),
+		threadID:  threadID,
+		incognito: incognito,
+		timeout:   timeout,
+		stdout:    stdout,
+		stderr:    stderr,
 	}
 }
 
@@ -88,7 +91,7 @@ func (r *REPL) Run(ctx context.Context) error {
 		}
 
 		if r.threadID == "" {
-			tid, err := r.client.CreateThread(ctx, "")
+			tid, err := r.client.CreateThread(ctx, "", r.incognito)
 			if err != nil {
 				_, _ = fmt.Fprintf(r.stderr, "error: %v\n", err)
 				continue
@@ -97,7 +100,7 @@ func (r *REPL) Run(ctx context.Context) error {
 		}
 
 		runCtx, cancel := withOptionalTimeout(ctx, r.timeout)
-		_, execErr := runner.Execute(runCtx, r.client, r.threadID, input, r.params, r.renderer.OnEvent)
+		_, execErr := runner.Execute(runCtx, r.client, r.threadID, input, r.params, r.renderer.OnEvent, &runner.RunOptions{Incognito: r.incognito})
 		cancel()
 
 		r.renderer.Flush()
@@ -125,7 +128,7 @@ func (r *REPL) handleCommand(ctx context.Context, input string) (bool, error) {
 	case input == "/quit" || input == "/exit":
 		return true, io.EOF
 	case input == "/help":
-		_, err := fmt.Fprintln(r.stderr, "/help\n/status\n/model <name>\n/persona <key>\n/thread\n/new\n/quit\n/exit")
+		_, err := fmt.Fprintln(r.stderr, "/help\n/status\n/model <name>\n/persona <key>\n/thread\n/new\n/incognito\n/quit\n/exit")
 		return true, err
 	case input == "/status":
 		return true, r.printStatus()
@@ -135,6 +138,14 @@ func (r *REPL) handleCommand(ctx context.Context, input string) (bool, error) {
 	case input == "/new":
 		r.threadID = ""
 		_, err := fmt.Fprintln(r.stderr, "new session")
+		return true, err
+	case input == "/incognito":
+		r.incognito = !r.incognito
+		status := "off"
+		if r.incognito {
+			status = "on"
+		}
+		_, err := fmt.Fprintf(r.stderr, "incognito: %s\n", status)
 		return true, err
 	case strings.HasPrefix(input, "/model "):
 		model := strings.TrimSpace(strings.TrimPrefix(input, "/model "))
@@ -171,6 +182,7 @@ func (r *REPL) printStatus() error {
 		Persona:   r.params.PersonaID,
 		WorkDir:   r.params.WorkDir,
 		Timeout:   timeoutDisplay(r.timeout),
+		Incognito: r.incognito,
 	})
 }
 
