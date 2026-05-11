@@ -26,7 +26,9 @@ function flushMicrotasks(): Promise<void> {
 }
 
 async function flushPreviewWork(): Promise<void> {
-  for (let i = 0; i < 8; i++) {
+  // CI 环境（GitHub Actions）比本地慢，需要更多轮次等待
+  // React 渲染 + iframe 挂载 + useEffect 执行 + fetch 发起
+  for (let i = 0; i < 20; i++) {
     await flushMicrotasks()
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
