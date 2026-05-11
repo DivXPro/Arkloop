@@ -833,7 +833,10 @@ func parseEffectiveMCPID(value any) (int64, bool) {
 }
 
 func buildEffectiveMCPEnv(server effectiveMCPServerConfig) []string {
-	env := make([]string, 0, len(server.Env))
+	var env []string
+	if server.InheritParentEnv {
+		env = os.Environ()
+	}
 	for key, value := range server.Env {
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
