@@ -624,8 +624,8 @@ export function useThreadSseEffect({
             currentRunSourcesRef.current = [...currentRunSourcesRef.current, ...newSources]
           }
         }
-        const result = agentEventToolOutput(event.data) as { artifacts?: unknown[]; stdout?: unknown; stderr?: unknown; exit_code?: unknown; output?: unknown } | undefined
-        const newArtifacts = extractArtifacts(result)
+        // 传入整个 event.data（resources 在 SSE data 顶层；artifacts 在嵌套 result 内部）
+        const newArtifacts = extractArtifacts(event.data)
         if (newArtifacts.length > 0) {
           currentRunArtifactsRef.current = [...currentRunArtifactsRef.current, ...newArtifacts]
           if (resultToolName === 'create_artifact') {

@@ -13,6 +13,7 @@ import { CitationBadge, WebSourcesContext } from './CitationBadge'
 import type { WebSource, ArtifactRef } from '../storage'
 import { ArtifactImage } from './ArtifactImage'
 import { ArtifactHtmlPreview } from './ArtifactHtmlPreview'
+import { ResourceUIPreview } from './ResourceUIPreview'
 import { ArtifactDownload } from './ArtifactDownload'
 import { MindmapBlock } from './MindmapBlock'
 import { MermaidBlock } from './MermaidBlock'
@@ -50,7 +51,7 @@ const WINDOWS_ABSOLUTE_URL_RE = /^[a-zA-Z]:[\\/]/
 
 function isDocumentArtifact(artifact: ArtifactRef): boolean {
   if (artifact.display === 'panel') return true
-  return !artifact.mime_type.startsWith('image/') && artifact.mime_type !== 'text/html'
+  return !artifact.mime_type.startsWith('image/') && !artifact.mime_type.startsWith('text/html')
 }
 
 function isDocumentResource(resource: ResourceRef): boolean {
@@ -344,7 +345,10 @@ function ArtifactAwareImg({ src, alt }: { src?: string; alt?: string }) {
     if (artifact.mime_type.startsWith('image/')) {
       return <ArtifactImage artifact={artifact} accessToken={accessToken} />
     }
-    if (artifact.mime_type === 'text/html') {
+    if (artifact.mime_type.startsWith('text/html')) {
+      if (artifact.key.startsWith('ui://')) {
+        return <ResourceUIPreview uri={artifact.key} title={artifact.title} contentType={artifact.mime_type} />
+      }
       return <ArtifactHtmlPreview artifact={artifact} accessToken={accessToken} />
     }
     if (onOpenDocument && isDocumentArtifact(artifact)) {
@@ -543,7 +547,7 @@ function hasStandaloneBlockPreview(children: ReactNode): boolean {
     href.startsWith('/workspace/')
   ) return true
 
-  return child.type === ArtifactHtmlPreview || child.type === WorkspaceResource
+  return child.type === ArtifactHtmlPreview || child.type === ResourceUIPreview || child.type === WorkspaceResource
 }
 
 const CODE_LANGUAGE_CLASS_RE = /(?:^|\s)language-([a-z0-9_-]+)(?:\s|$)/i
@@ -1021,6 +1025,22 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, disabl
     })
   }, [allowHtml, artifactCount, compact, content.length, disableMath, renderContent.length, shouldThrottleStreamingMath, sourceCount, streaming, typography])
 
+  // MCP ext-apps: 自动渲染未被 markdown 引用的 ui:// resource
+  const resourceUIArtifacts = useMemo(() => {
+    if (!artifacts) return []
+    const referencedKeys = new Set<string>()
+    const artifactRefPattern = /artifact:\/\/([^\s)]+)/g
+    let match: RegExpExecArray | null
+    while ((match = artifactRefPattern.exec(normalizedContent)) !== null) {
+      referencedKeys.add(match[1])
+    }
+    return artifacts.filter((a) =>
+      a.key.startsWith('ui://') &&
+      a.mime_type.startsWith('text/html') &&
+      !referencedKeys.has(a.key),
+    )
+  }, [artifacts, normalizedContent])
+
   return (
     <ArtifactsContext.Provider value={artifactsValue}>
       <WebSourcesContext.Provider value={webSources ?? []}>
@@ -1047,6 +1067,15 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, disabl
               {normalizedContent}
             </ReactMarkdown>
           )}
+          {resourceUIArtifacts.map((artifact) => (
+            <div key={artifact.key} style={{ marginTop: '12px' }}>
+              <ResourceUIPreview
+                uri={artifact.key}
+                title={artifact.title}
+                contentType={artifact.mime_type}
+              />
+            </div>
+          ))}
         </div>
       </WebSourcesContext.Provider>
     </ArtifactsContext.Provider>

@@ -368,6 +368,8 @@ function agentEventToMessageChunks(uiEvent: AgentUIEvent, state: MessageChunkLif
     const data = uiEvent.data as {
       toolCallId: string
       output: unknown
+      resources?: { mime_type: string; uri?: string; text?: string; size?: number; preview?: string }[]
+      images?: { mime_type: string; blob_key?: string; data_url?: string }[]
       error?: { message?: string; errorClass?: string; code?: string }
     }
     if (data.error || uiEvent.errorCode) {
@@ -378,7 +380,13 @@ function agentEventToMessageChunks(uiEvent: AgentUIEvent, state: MessageChunkLif
       })
       return chunks
     }
-    chunks.push({ type: 'tool-output-available', toolCallId: data.toolCallId, output: data.output })
+    chunks.push({
+      type: 'tool-output-available',
+      toolCallId: data.toolCallId,
+      output: data.output,
+      resources: data.resources,
+      images: data.images,
+    })
     return chunks
   }
 

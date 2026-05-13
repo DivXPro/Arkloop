@@ -213,7 +213,9 @@ export function normalizeAgentEventData(params: {
         ...(stringField(record, 'llmName', 'llm_name') ? { llmName: stringField(record, 'llmName', 'llm_name') } : {}),
       }
     }
-    case 'tool-result':
+    case 'tool-result': {
+      const resourcesRaw = record?.resources
+      const imagesRaw = record?.images
       return {
         toolCallId: stringField(record, 'toolCallId', 'tool_call_id') ?? eventId,
         ...(normalizeToolName(record, toolName) ? { toolName: normalizeToolName(record, toolName) } : {}),
@@ -221,7 +223,10 @@ export function normalizeAgentEventData(params: {
         ...(normalizeToolError(record?.error, errorCode)
           ? { error: normalizeToolError(record?.error, errorCode) }
           : {}),
+        ...(Array.isArray(resourcesRaw) ? { resources: resourcesRaw } : {}),
+        ...(Array.isArray(imagesRaw) ? { images: imagesRaw } : {}),
       }
+    }
     case 'terminal-delta': {
       const stream = rawType === 'terminal.stderr_delta'
         ? 'stderr'
