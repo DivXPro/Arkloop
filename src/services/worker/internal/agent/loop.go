@@ -3552,17 +3552,36 @@ func toolResultFromExecution(toolCallID string, toolName string, displayDescript
 	}
 	var contentParts []llm.ContentPart
 	for _, att := range result.ContentParts {
-		attachment := &messagecontent.AttachmentRef{
-			MimeType: att.MimeType,
+		mimeType := strings.TrimSpace(att.MimeType)
+
+		// Image 类型
+		if strings.HasPrefix(mimeType, "image/") {
+			attachment := &messagecontent.AttachmentRef{
+				MimeType: att.MimeType,
+			}
+			if key := strings.TrimSpace(att.AttachmentKey); key != "" {
+				attachment.Key = key
+			}
+			contentParts = append(contentParts, llm.ContentPart{
+				Type:       messagecontent.PartTypeImage,
+				Data:       att.Data,
+				Attachment: attachment,
+			})
+			continue
 		}
-		if key := strings.TrimSpace(att.AttachmentKey); key != "" {
-			attachment.Key = key
+
+		// Resource 类型
+		if att.URI != "" || len(att.Data) > 0 {
+			contentParts = append(contentParts, llm.ContentPart{
+				Type: messagecontent.PartTypeResource,
+				Data: att.Data,
+				Resource: &messagecontent.ResourceRef{
+					URI:      att.URI,
+					MimeType: att.MimeType,
+					Text:     att.Text,
+				},
+			})
 		}
-		contentParts = append(contentParts, llm.ContentPart{
-			Type:       messagecontent.PartTypeImage,
-			Data:       att.Data,
-			Attachment: attachment,
-		})
 	}
 	return llm.StreamToolResult{
 		ToolCallID:         toolCallID,

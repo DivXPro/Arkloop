@@ -10,6 +10,8 @@ import (
 type Client interface {
 	ListTools(ctx context.Context, timeoutMs int) ([]Tool, error)
 	CallTool(ctx context.Context, name string, arguments map[string]any, timeoutMs int) (ToolCallResult, error)
+	ListResources(ctx context.Context, timeoutMs int) ([]Resource, error)
+	ReadResource(ctx context.Context, uri string, timeoutMs int) (ResourceContent, error)
 	IsHealthy(ctx context.Context) bool
 	Close() error
 }

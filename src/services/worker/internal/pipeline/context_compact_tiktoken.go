@@ -54,7 +54,7 @@ func HistoryThreadPromptTokens(enc *tiktoken.Tiktoken, msgs []llm.Message) int {
 		n += tokensPerMessage
 		n += len(enc.Encode(m.Role, nil, nil))
 		n += len(enc.Encode(messageText(m), nil, nil))
-		n += contextCompactImageTokens(m)
+		n += contextCompactMediaTokens(m)
 	}
 	n += 3
 	return n
@@ -121,12 +121,29 @@ func SuffixRoleAndContentTokens(enc *tiktoken.Tiktoken, msgs []llm.Message, star
 	return n
 }
 
-func contextCompactImageTokens(m llm.Message) int {
+func contextCompactMediaTokens(m llm.Message) int {
 	total := 0
 	for _, part := range m.Content {
-		if part.Kind() == messagecontent.PartTypeImage {
+		switch part.Kind() {
+		case messagecontent.PartTypeImage:
 			total += contextCompactVisionTokensPerImage
+		case messagecontent.PartTypeResource:
+			total += contextCompactResourceTokens(part)
 		}
 	}
 	return total
+}
+
+func contextCompactResourceTokens(part llm.ContentPart) int {
+	text := ""
+	if part.Resource != nil {
+		text = part.Resource.Text
+	}
+	if text == "" && len(part.Data) > 0 {
+		text = string(part.Data)
+	}
+	if text == "" {
+		return 0
+	}
+	return approxTokensFromText(text)
 }

@@ -422,7 +422,7 @@ func computeTailKeepByTokenBudget(enc *tiktoken.Tiktoken, msgs []llm.Message, to
 	keep := 0
 	for i := len(msgs) - 1; i >= 0; i-- {
 		mt := tokensPerMessage + len(enc.Encode(msgs[i].Role, nil, nil)) + len(enc.Encode(messageText(msgs[i]), nil, nil))
-		mt += contextCompactImageTokens(msgs[i])
+		mt += contextCompactMediaTokens(msgs[i])
 		if keep > 0 && accum+mt > tokenBudget {
 			break
 		}
@@ -1357,19 +1357,27 @@ func stripOlderImagePartsKeepingTail(msgs []llm.Message, keepImages int) ([]llm.
 		parts := append([]llm.ContentPart(nil), out[i].Content...)
 		replaced := false
 		for j := len(parts) - 1; j >= 0; j-- {
-			if parts[j].Kind() != messagecontent.PartTypeImage {
-				continue
+			switch parts[j].Kind() {
+			case messagecontent.PartTypeImage:
+				if keepRemaining > 0 {
+					keepRemaining--
+					continue
+				}
+				parts[j] = llm.ContentPart{
+					Type: messagecontent.PartTypeText,
+					Text: contextCompactImagePlaceholder(parts[j]),
+				}
+				stripped++
+				replaced = true
+			case messagecontent.PartTypeResource:
+				// Resource parts: 无条件替换为占位符（不保留）
+				parts[j] = llm.ContentPart{
+					Type: messagecontent.PartTypeText,
+					Text: contextCompactResourcePlaceholder(parts[j]),
+				}
+				stripped++
+				replaced = true
 			}
-			if keepRemaining > 0 {
-				keepRemaining--
-				continue
-			}
-			parts[j] = llm.ContentPart{
-				Type: messagecontent.PartTypeText,
-				Text: contextCompactImagePlaceholder(parts[j]),
-			}
-			stripped++
-			replaced = true
 		}
 		if replaced {
 			out[i].Content = parts
@@ -1382,6 +1390,18 @@ func contextCompactImagePlaceholder(part llm.ContentPart) string {
 	tag := "[image]"
 	if part.Attachment != nil && strings.TrimSpace(part.Attachment.Key) != "" {
 		tag = "[image attachment_key=" + strconv.Quote(part.Attachment.Key) + "]"
+	}
+	return tag
+}
+
+func contextCompactResourcePlaceholder(part llm.ContentPart) string {
+	tag := "[resource]"
+	if part.Resource != nil {
+		if uri := strings.TrimSpace(part.Resource.URI); uri != "" {
+			tag = "[resource uri=" + strconv.Quote(uri) + "]"
+		} else if mimeType := strings.TrimSpace(part.Resource.MimeType); mimeType != "" {
+			tag = "[resource mime_type=" + strconv.Quote(mimeType) + "]"
+		}
 	}
 	return tag
 }

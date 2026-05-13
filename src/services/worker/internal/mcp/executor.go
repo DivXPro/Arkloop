@@ -20,17 +20,23 @@ const (
 type ToolExecutor struct {
 	server                   ServerConfig
 	remoteToolNameByToolName map[string]string
+	resourceURIByToolName    map[string]string // tool internal name -> ui:// URI
 	pool                     *Pool
 }
 
-func NewToolExecutor(server ServerConfig, remote map[string]string, pool *Pool) *ToolExecutor {
+func NewToolExecutor(server ServerConfig, remote map[string]string, resourceURIs map[string]string, pool *Pool) *ToolExecutor {
 	toolMap := map[string]string{}
 	for key, value := range remote {
 		toolMap[key] = value
 	}
+	uriMap := map[string]string{}
+	for key, value := range resourceURIs {
+		uriMap[key] = value
+	}
 	return &ToolExecutor{
 		server:                   server,
 		remoteToolNameByToolName: toolMap,
+		resourceURIByToolName:    uriMap,
 		pool:                     pool,
 	}
 }
@@ -110,6 +116,25 @@ func (e *ToolExecutor) Execute(
 	}
 
 	content, attachments := splitMCPContent(result.Content)
+
+	// MCP ext-apps: 如果 tool 关联了 UI resource，读取 HTML 内容
+	resourceURI := e.resourceURIByToolName[toolName]
+	if resourceURI != "" {
+		resourceContent, err := client.ReadResource(ctx, resourceURI, timeoutMs)
+		if err == nil && (resourceContent.Text != "" || len(resourceContent.Blob) > 0) {
+			data := []byte(resourceContent.Text)
+			if len(data) == 0 {
+				data = resourceContent.Blob
+			}
+			attachments = append([]tools.ContentAttachment{{
+				MimeType: resourceContent.MimeType,
+				Data:     data,
+				URI:      resourceContent.URI,
+				Text:     resourceContent.Text,
+			}}, attachments...)
+		}
+	}
+
 	return tools.ExecutionResult{
 		ResultJSON:   map[string]any{"content": content},
 		ContentParts: attachments,
@@ -124,8 +149,17 @@ func splitMCPContent(content []map[string]any) ([]map[string]any, []tools.Conten
 	cleaned := make([]map[string]any, 0, len(content))
 	attachments := make([]tools.ContentAttachment, 0)
 	for _, item := range content {
-		if strings.EqualFold(strings.TrimSpace(stringFromAny(item["type"])), "image") {
+		itemType := strings.TrimSpace(stringFromAny(item["type"]))
+		if strings.EqualFold(itemType, "image") {
 			next, attachment, ok := imageContentAttachment(item)
+			cleaned = append(cleaned, next)
+			if ok {
+				attachments = append(attachments, attachment)
+			}
+			continue
+		}
+		if strings.EqualFold(itemType, "resource") {
+			next, attachment, ok := resourceContentAttachment(item)
 			cleaned = append(cleaned, next)
 			if ok {
 				attachments = append(attachments, attachment)
@@ -157,6 +191,41 @@ func imageContentAttachment(item map[string]any) (map[string]any, tools.ContentA
 		"bytes":    len(data),
 		"attached": true,
 	}, tools.ContentAttachment{MimeType: mimeType, Data: data}, true
+}
+
+func resourceContentAttachment(item map[string]any) (map[string]any, tools.ContentAttachment, bool) {
+	mimeType := firstMCPString(item["mimeType"], item["mime_type"])
+	if mimeType == "" {
+		mimeType = "text/html"
+	}
+	uri := strings.TrimSpace(stringFromAny(item["uri"]))
+	text := strings.TrimSpace(stringFromAny(item["text"]))
+	data := []byte(text)
+	if len(data) == 0 {
+		dataText := strings.TrimSpace(stringFromAny(item["data"]))
+		if decoded, err := base64.StdEncoding.DecodeString(dataText); err == nil {
+			data = decoded
+		}
+	}
+	if uri == "" && len(data) == 0 {
+		return map[string]any{
+			"type":     "resource",
+			"mimeType": mimeType,
+			"error":    "invalid_resource_data",
+		}, tools.ContentAttachment{}, false
+	}
+	return map[string]any{
+		"type":     "resource",
+		"mimeType": mimeType,
+		"uri":      uri,
+		"bytes":    len(data),
+		"attached": true,
+	}, tools.ContentAttachment{
+		MimeType: mimeType,
+		Data:     data,
+		URI:      uri,
+		Text:     text,
+	}, true
 }
 
 func decodeMCPImageData(value string) ([]byte, error) {
@@ -251,4 +320,51 @@ func durationMs(started time.Time) int {
 		return 0
 	}
 	return millis
+}
+
+func mapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// extractToolResourceURI 从 Tool 的 _meta.ui.resourceUri 提取关联的 UI resource URI
+// 兼容旧格式 _meta["ui/resourceUri"]（已弃用）和新格式 _meta.ui.resourceUri
+func extractToolResourceURI(tool Tool) string {
+	if tool.Meta == nil {
+		return ""
+	}
+	metaUI, _ := tool.Meta["ui"].(map[string]any)
+	if metaUI != nil {
+		uri := strings.TrimSpace(asString(metaUI["resourceUri"]))
+		if uri != "" {
+			return uri
+		}
+	}
+	// fallback to deprecated flat format
+	return strings.TrimSpace(asString(tool.Meta["ui/resourceUri"]))
+}
+
+// isToolVisibleToModel 检查 tool 是否对 agent(model) 可见
+// visibility 默认 ["model", "app"]；不含 "model" 的 tool 对 agent 隐藏
+func isToolVisibleToModel(tool Tool) bool {
+	if tool.Meta == nil {
+		return true
+	}
+	metaUI, _ := tool.Meta["ui"].(map[string]any)
+	if metaUI == nil {
+		return true
+	}
+	rawVisibility, ok := metaUI["visibility"].([]any)
+	if !ok || len(rawVisibility) == 0 {
+		return true
+	}
+	for _, v := range rawVisibility {
+		if strings.TrimSpace(asString(v)) == "model" {
+			return true
+		}
+	}
+	return false
 }

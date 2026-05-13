@@ -142,6 +142,7 @@ type ContentPart struct {
 	CacheHint     *CacheHint
 	CacheControl  *string // "ephemeral"（Anthropic prompt caching）
 	Attachment    *messagecontent.AttachmentRef
+	Resource      *messagecontent.ResourceRef
 	ExtractedText string
 	Data          []byte
 	TrustSource   string // "system" | "user" | "tool" | "memory" | "file" | "mcp" | ""
@@ -159,6 +160,9 @@ func (p ContentPart) Kind() string {
 	trimmed := strings.TrimSpace(p.Type)
 	if trimmed != "" {
 		return trimmed
+	}
+	if p.Resource != nil {
+		return messagecontent.PartTypeResource
 	}
 	if p.Attachment == nil {
 		return messagecontent.PartTypeText
@@ -197,6 +201,12 @@ func (p ContentPart) ToJSON() map[string]any {
 			"extracted_text": p.ExtractedText,
 		}
 		return payload
+	case messagecontent.PartTypeResource:
+		payload := map[string]any{
+			"type":     messagecontent.PartTypeResource,
+			"resource": p.Resource,
+		}
+		return payload
 	default:
 		payload := map[string]any{"type": messagecontent.PartTypeText, "text": p.Text}
 		if p.CacheHint != nil {
@@ -222,6 +232,8 @@ func PartPromptText(part ContentPart) string {
 			ExtractedText: part.ExtractedText,
 		}
 		return messagecontent.PromptText(ref)
+	case messagecontent.PartTypeResource:
+		return ""
 	default:
 		return ""
 	}
@@ -671,6 +683,36 @@ type StreamToolResult struct {
 	Cost               *Cost
 }
 
+func collectResourceParts(parts []ContentPart) []map[string]any {
+	result := make([]map[string]any, 0)
+	for _, part := range parts {
+		kind := part.Kind()
+		if kind != messagecontent.PartTypeResource || part.Resource == nil {
+			continue
+		}
+		item := map[string]any{
+			"mime_type": part.Resource.MimeType,
+			"uri":       part.Resource.URI,
+		}
+		if part.Resource.Text != "" {
+			item["text"] = part.Resource.Text
+		} else if len(part.Data) > 0 {
+			if len(part.Data) < 4096 {
+				item["text"] = string(part.Data)
+			} else {
+				item["size"] = len(part.Data)
+				previewLen := 512
+				if len(part.Data) < previewLen {
+					previewLen = len(part.Data)
+				}
+				item["preview"] = string(part.Data[:previewLen])
+			}
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
 func (r StreamToolResult) ToDataJSON() map[string]any {
 	toolName := CanonicalToolName(r.ToolName)
 	if toolName == "" {
@@ -695,6 +737,7 @@ func (r StreamToolResult) ToDataJSON() map[string]any {
 	if r.Cost != nil {
 		payload["cost"] = r.Cost.ToJSON()
 	}
+	payload["resources"] = collectResourceParts(r.ContentParts)
 	return payload
 }
 
@@ -1127,6 +1170,12 @@ func contentPartFromJSONMap(raw map[string]any) (ContentPart, error) {
 			Attachment:    attachment,
 			ExtractedText: stringValue(raw["extracted_text"]),
 		}, nil
+	case messagecontent.PartTypeResource:
+		resource, err := resourceRefFromJSON(raw["resource"])
+		if err != nil {
+			return ContentPart{}, err
+		}
+		return ContentPart{Type: messagecontent.PartTypeResource, Resource: resource}, nil
 	default:
 		return ContentPart{}, fmt.Errorf("unsupported content part type %q", typ)
 	}
@@ -1141,6 +1190,20 @@ func attachmentRefFromJSON(raw any) (*messagecontent.AttachmentRef, error) {
 		Key:      strings.TrimSpace(stringValue(obj["key"])),
 		Filename: strings.TrimSpace(stringValue(obj["filename"])),
 		MimeType: strings.TrimSpace(stringValue(obj["mime_type"])),
+		Size:     int64(intValue(obj["size"])),
+	}, nil
+}
+
+func resourceRefFromJSON(raw any) (*messagecontent.ResourceRef, error) {
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("resource is not an object")
+	}
+	return &messagecontent.ResourceRef{
+		URI:      strings.TrimSpace(stringValue(obj["uri"])),
+		MimeType: strings.TrimSpace(stringValue(obj["mime_type"])),
+		Text:     stringValue(obj["text"]),
+		BlobKey:  strings.TrimSpace(stringValue(obj["blob_key"])),
 		Size:     int64(intValue(obj["size"])),
 	}, nil
 }

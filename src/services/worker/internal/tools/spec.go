@@ -42,6 +42,7 @@ type AgentToolSpec struct {
 	RequiresExclusiveAccess   bool
 	SupportsProgressHeartbeat bool
 	HardTimeoutMode           HardTimeoutMode
+	ResourceURI               string // MCP ext-apps 关联的 UI resource URI
 }
 
 func (s AgentToolSpec) ToToolCallJSON() map[string]any {

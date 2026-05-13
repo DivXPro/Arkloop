@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	PartTypeText  = "text"
-	PartTypeImage = "image"
-	PartTypeFile  = "file"
+	PartTypeText     = "text"
+	PartTypeImage    = "image"
+	PartTypeFile     = "file"
+	PartTypeResource = "resource"
 )
 
 type AttachmentRef struct {
@@ -20,11 +21,20 @@ type AttachmentRef struct {
 	Size     int64  `json:"size"`
 }
 
+type ResourceRef struct {
+	URI      string `json:"uri,omitempty"`
+	MimeType string `json:"mime_type,omitempty"`
+	Text     string `json:"text,omitempty"`
+	BlobKey  string `json:"blob_key,omitempty"`
+	Size     int64  `json:"size,omitempty"`
+}
+
 type Part struct {
 	Type          string         `json:"type"`
 	Text          string         `json:"text,omitempty"`
 	Attachment    *AttachmentRef `json:"attachment,omitempty"`
 	ExtractedText string         `json:"extracted_text,omitempty"`
+	Resource      *ResourceRef   `json:"resource,omitempty"`
 }
 
 type Content struct {
@@ -87,6 +97,14 @@ func Normalize(parts []Part) (Content, error) {
 				Type:          PartTypeFile,
 				Attachment:    cleanAttachment,
 				ExtractedText: strings.TrimSpace(part.ExtractedText),
+			})
+		case PartTypeResource:
+			if part.Resource == nil {
+				return Content{}, fmt.Errorf("resource part requires resource ref")
+			}
+			normalized = append(normalized, Part{
+				Type:     PartTypeResource,
+				Resource: part.Resource,
 			})
 		default:
 			return Content{}, fmt.Errorf("unsupported content part type")
@@ -170,6 +188,12 @@ func Projection(content Content, limit int) string {
 				block += "\n" + part.ExtractedText
 			}
 			blocks = append(blocks, block)
+		case PartTypeResource:
+			if part.Resource != nil && part.Resource.URI != "" {
+				blocks = append(blocks, fmt.Sprintf("[Resource: %s]", part.Resource.URI))
+			} else {
+				blocks = append(blocks, "[Resource]")
+			}
 		}
 	}
 	out := strings.Join(blocks, "\n\n")
@@ -193,6 +217,8 @@ func PromptText(part Part) string {
 			return fmt.Sprintf("附件 %s", name)
 		}
 		return fmt.Sprintf("附件 %s:\n%s", name, part.ExtractedText)
+	case PartTypeResource:
+		return ""
 	default:
 		return ""
 	}
@@ -202,6 +228,9 @@ func cleanType(raw string, part Part) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed != "" {
 		return trimmed
+	}
+	if part.Resource != nil {
+		return PartTypeResource
 	}
 	if part.Attachment == nil {
 		return PartTypeText

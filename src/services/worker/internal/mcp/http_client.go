@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -94,8 +95,14 @@ func (c *HTTPClient) Initialize(ctx context.Context, timeoutMs int) error {
 	}
 	if _, err := c.doRequest(ctx, "initialize", map[string]any{
 		"protocolVersion": defaultProtocolVersion,
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "arkloop", "version": "0"},
+		"capabilities": map[string]any{
+			"extensions": map[string]any{
+				"io.modelcontextprotocol/ui": map[string]any{
+					"mimeTypes": []string{"text/html;profile=mcp-app"},
+				},
+			},
+		},
+		"clientInfo": map[string]any{"name": "arkloop", "version": "0"},
 	}, timeoutMs); err != nil {
 		return err
 	}
@@ -146,14 +153,107 @@ func (c *HTTPClient) ListTools(ctx context.Context, timeoutMs int) ([]Tool, erro
 				schema[key] = value
 			}
 		}
+		var meta map[string]any
+		if rawMeta, ok := obj["_meta"].(map[string]any); ok {
+			meta = rawMeta
+		}
 		out = append(out, Tool{
 			Name:        name,
 			Title:       title,
 			Description: description,
 			InputSchema: schema,
+			Meta:        meta,
 		})
 	}
 	return out, nil
+}
+
+func (c *HTTPClient) ListResources(ctx context.Context, timeoutMs int) ([]Resource, error) {
+	if err := c.Initialize(ctx, timeoutMs); err != nil {
+		return nil, err
+	}
+	result, err := c.doRequest(ctx, "resources/list", map[string]any{}, timeoutMs)
+	if err != nil {
+		return nil, err
+	}
+
+	rawResources := result["resources"]
+	if rawResources == nil {
+		return nil, nil
+	}
+	list, ok := rawResources.([]any)
+	if !ok {
+		return nil, ProtocolError{Message: "resources/list returned resources is not an array"}
+	}
+
+	out := []Resource{}
+	for _, item := range list {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		uri := strings.TrimSpace(asString(obj["uri"]))
+		if uri == "" {
+			continue
+		}
+		var meta map[string]any
+		if rawMeta, ok := obj["_meta"].(map[string]any); ok {
+			meta = rawMeta
+		}
+		out = append(out, Resource{
+			URI:      uri,
+			Name:     strings.TrimSpace(asString(obj["name"])),
+			MimeType: strings.TrimSpace(asString(obj["mimeType"])),
+			Meta:     meta,
+		})
+	}
+	return out, nil
+}
+
+func (c *HTTPClient) ReadResource(ctx context.Context, uri string, timeoutMs int) (ResourceContent, error) {
+	if err := c.Initialize(ctx, timeoutMs); err != nil {
+		return ResourceContent{}, err
+	}
+	result, err := c.doRequest(ctx, "resources/read", map[string]any{"uri": uri}, timeoutMs)
+	if err != nil {
+		return ResourceContent{}, err
+	}
+
+	rawContents := result["contents"]
+	if rawContents == nil {
+		return ResourceContent{}, ProtocolError{Message: "resources/read returned no contents"}
+	}
+	list, ok := rawContents.([]any)
+	if !ok {
+		return ResourceContent{}, ProtocolError{Message: "resources/read returned contents is not an array"}
+	}
+	if len(list) == 0 {
+		return ResourceContent{}, ProtocolError{Message: "resources/read returned empty contents"}
+	}
+	obj, ok := list[0].(map[string]any)
+	if !ok {
+		return ResourceContent{}, ProtocolError{Message: "resources/read returned content is not an object"}
+	}
+
+	content := ResourceContent{
+		URI:      strings.TrimSpace(asString(obj["uri"])),
+		MimeType: strings.TrimSpace(asString(obj["mimeType"])),
+	}
+	if rawMeta, ok := obj["_meta"].(map[string]any); ok {
+		content.Meta = rawMeta
+	}
+
+	if text, ok := obj["text"].(string); ok {
+		content.Text = text
+	} else if blob, ok := obj["blob"].(string); ok {
+		decoded, err := base64.StdEncoding.DecodeString(blob)
+		if err != nil {
+			return ResourceContent{}, ProtocolError{Message: "resources/read returned invalid base64 blob"}
+		}
+		content.Blob = decoded
+	}
+
+	return content, nil
 }
 
 func (c *HTTPClient) CallTool(ctx context.Context, name string, arguments map[string]any, timeoutMs int) (ToolCallResult, error) {
