@@ -53,6 +53,7 @@ export function ResourceUIPreview({ resource, accessToken }: Props) {
       uri={resource.uri}
       content={content}
       toolOutput={resource.initialData}
+      csp={resource.csp}
       style={{ minHeight: '300px' }}
     />
   )

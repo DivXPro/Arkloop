@@ -668,6 +668,13 @@ export type ArtifactRef = {
   display?: 'inline' | 'panel'
 }
 
+export type McpAppCsp = {
+  connectDomains?: string[]
+  resourceDomains?: string[]
+  frameDomains?: string[]
+  baseUriDomains?: string[]
+}
+
 export type McpAppResource = {
   key: string
   uri: string
@@ -675,6 +682,7 @@ export type McpAppResource = {
   mimeType: string
   size: number
   initialData?: unknown
+  csp?: McpAppCsp
 }
 
 function messageArtifactsKey(messageId: string): string {

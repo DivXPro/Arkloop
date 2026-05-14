@@ -1,14 +1,40 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import type { McpAppCsp } from '../storage'
 
-const IFRAME_HTML_TEMPLATE = (themeCSS: string, content: string) => `<!DOCTYPE html>
+const CDN_DOMAINS = 'https://cdn.jsdelivr.net https://unpkg.com https://esm.sh'
+
+function buildCSP(csp?: McpAppCsp): string {
+  const resourceDomains = csp?.resourceDomains ?? []
+  const connectDomains = csp?.connectDomains ?? []
+  const frameDomains = csp?.frameDomains ?? []
+  const baseUriDomains = csp?.baseUriDomains ?? []
+
+  const resourceSrc = resourceDomains.join(' ')
+  const scriptSrc = [CDN_DOMAINS, ...resourceDomains].join(' ')
+
+  return [
+    "default-src 'none'",
+    `script-src 'unsafe-inline' ${scriptSrc}`,
+    `style-src 'unsafe-inline' ${resourceSrc}`,
+    `img-src data: blob: ${resourceSrc}`,
+    `font-src ${resourceSrc || "'self'"}`,
+    frameDomains.length > 0 ? `frame-src ${frameDomains.join(' ')}` : "frame-src 'none'",
+    connectDomains.length > 0 ? `connect-src ${connectDomains.join(' ')}` : "connect-src 'none'",
+    baseUriDomains.length > 0 ? `base-uri ${baseUriDomains.join(' ')}` : "base-uri 'self'",
+    "object-src 'none'",
+    `media-src ${resourceSrc || "'self' data:"}`,
+  ].filter(Boolean).join('; ')
+}
+
+const IFRAME_HTML_TEMPLATE = (themeCSS: string, content: string, csp: string) => `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://esm.sh; style-src 'unsafe-inline'; img-src data: blob: https: http:; font-src https: http:; connect-src https: http:;">
+<meta http-equiv="Content-Security-Policy" content="${csp}">` + `
 <style>
   * { box-sizing: border-box; }
   html { background: transparent; overflow-x: hidden; }
@@ -86,6 +112,7 @@ type Props = {
   uri: string
   content: string
   toolOutput?: unknown
+  csp?: McpAppCsp
   onOpenLink?: (url: string) => void
   style?: React.CSSProperties
   className?: string
@@ -108,7 +135,7 @@ function toCallToolResult(output: unknown): CallToolResult {
   return { content: [{ type: 'text', text }] }
 }
 
-export function McpAppIframe({ uri, content, toolOutput, onOpenLink, style, className }: Props) {
+export function McpAppIframe({ uri, content, toolOutput, csp, onOpenLink, style, className }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const bridgeRef = useRef<AppBridge | null>(null)
   const pendingToolResultRef = useRef<unknown>(undefined)
@@ -118,7 +145,7 @@ export function McpAppIframe({ uri, content, toolOutput, onOpenLink, style, clas
   // Rebuild iframe HTML when content or theme changes
   const [srcDoc, setSrcDoc] = useState(() => {
     const snapshot = collectThemeSnapshot()
-    return IFRAME_HTML_TEMPLATE(snapshot.css, content)
+    return IFRAME_HTML_TEMPLATE(snapshot.css, content, buildCSP(csp))
   })
 
   const sendToolResult = useCallback((bridge: AppBridge, output: unknown) => {
@@ -219,9 +246,9 @@ export function McpAppIframe({ uri, content, toolOutput, onOpenLink, style, clas
 
   const rebuildSrcDoc = useCallback((htmlContent: string) => {
     const snapshot = collectThemeSnapshot()
-    const next = IFRAME_HTML_TEMPLATE(snapshot.css, htmlContent)
+    const next = IFRAME_HTML_TEMPLATE(snapshot.css, htmlContent, buildCSP(csp))
     setSrcDoc((prev) => (prev !== next ? next : prev))
-  }, [])
+  }, [csp])
 
   useEffect(() => {
     rebuildSrcDoc(content)

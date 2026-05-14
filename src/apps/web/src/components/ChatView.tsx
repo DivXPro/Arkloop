@@ -51,8 +51,10 @@ import {
   buildMessageFileOpsFromAgentEvents,
   buildMessageWebFetchesFromAgentEvents,
   buildMessageThinkingFromAgentEvents,
+  buildMessageResourcesFromAgentEvents,
   buildTodosFromAgentEvents,
 } from '../agentEventProcessing'
+import type { McpAppResource } from '../storage'
 import { getThreadTodos, setThreadTodos, clearThreadTodos, type TodoItem } from '../todoDb'
 import {
   buildAssistantTurnFromAgentEvents,
@@ -131,6 +133,7 @@ import {
   writeMessageSources,
   readMessageArtifacts,
   writeMessageArtifacts,
+  writeMessageResources,
   readMessageCodeExecutions,
   writeMessageCodeExecutions,
   readMessageBrowserActions,
@@ -1227,6 +1230,7 @@ export const ChatView = memo(function ChatView() {
         // 加载各消息缓存的 web 来源
         const sourcesMap = new Map<string, WebSource[]>()
         const artifactsMap = new Map<string, ArtifactRef[]>()
+        const resourcesMap = new Map<string, McpAppResource[]>()
         const widgetsMap = new Map<string, WidgetRef[]>()
         const codeExecMap = new Map<string, CodeExecutionRef[]>()
         const browserActionsMap = new Map<string, BrowserActionRef[]>()
@@ -1370,6 +1374,13 @@ export const ChatView = memo(function ChatView() {
                 writeMessageArtifacts(lastAssistant.id, replayArtifacts)
               }
             }
+            const replayResources = buildMessageResourcesFromAgentEvents(replayEvents)
+            if (lastAssistant && !resourcesMap.has(lastAssistant.id)) {
+              if (replayResources.length > 0) {
+                resourcesMap.set(lastAssistant.id, replayResources)
+                writeMessageResources(lastAssistant.id, replayResources)
+              }
+            }
             if (lastAssistant && replayWidgetsNeeded) {
               if (replayWidgets.length > 0) {
                 widgetsMap.set(lastAssistant.id, replayWidgets)
@@ -1449,7 +1460,7 @@ export const ChatView = memo(function ChatView() {
                 assistantTurn: replayTurn.segments.length > 0 ? replayTurn : null,
                 sources: replaySearchSteps.flatMap((step) => step.sources ?? []),
                 artifacts: replayArtifacts,
-                resources: [],
+                resources: replayResources,
                 widgets: replayWidgets,
                 codeExecutions: replayExecs,
                 browserActions: replayBrowserActions,
@@ -1482,6 +1493,7 @@ export const ChatView = memo(function ChatView() {
         }
         sourcesMap.forEach((sources, id) => mergeMeta(id, { sources }))
         artifactsMap.forEach((artifacts, id) => mergeMeta(id, { artifacts }))
+        resourcesMap.forEach((resources, id) => mergeMeta(id, { resources }))
         widgetsMap.forEach((widgets, id) => mergeMeta(id, { widgets }))
         codeExecMap.forEach((codeExecutions, id) => mergeMeta(id, { codeExecutions }))
         browserActionsMap.forEach((browserActions, id) => mergeMeta(id, { browserActions }))

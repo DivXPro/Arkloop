@@ -144,6 +144,16 @@ func (e *ToolExecutor) Execute(
 				mimeType = mimeType + ";profile=mcp-app"
 			}
 
+			// 从 resource _meta.ui.csp 提取 CSP 配置
+			var csp map[string]any
+			if resourceContent.Meta != nil {
+				if metaUI, ok := resourceContent.Meta["ui"].(map[string]any); ok {
+					if cspRaw, ok := metaUI["csp"].(map[string]any); ok {
+						csp = cspRaw
+					}
+				}
+			}
+
 			store := pool.ArtifactStore()
 			if store == nil {
 				slog.WarnContext(ctx, "mcp ext-apps: artifact store nil, falling back to attachment", "tool_name", toolName)
@@ -180,6 +190,7 @@ func (e *ToolExecutor) Execute(
 							"filename":  filename,
 							"size":      len(data),
 							"mime_type": mimeType,
+							"csp":       csp,
 						},
 					}
 					slog.InfoContext(ctx, "mcp ext-apps: artifact uploaded", "tool_name", toolName, "key", key, "size", len(data))

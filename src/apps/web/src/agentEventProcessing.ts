@@ -6,7 +6,7 @@ import {
   agentEventToolInput,
   agentEventToolOutput,
 } from './agent-ui/event-data'
-import type { ArtifactRef, BrowserActionRef, CodeExecutionRef, FileOpRef, MessageThinkingRef, McpAppResource, SubAgentRef, WebFetchRef, WidgetRef } from './storage'
+import type { ArtifactRef, BrowserActionRef, CodeExecutionRef, FileOpRef, McpAppCsp, McpAppResource, MessageThinkingRef, SubAgentRef, WebFetchRef, WidgetRef } from './storage'
 import { basename, presentationForTool, truncate } from './toolPresentation'
 import { contentText } from './timelineText'
 import { FILE_OP_TOOL_NAMES } from './copSubSegment'
@@ -107,6 +107,20 @@ export function extractResources(source: unknown): McpAppResource[] {
     const item = r as Record<string, unknown>
     const key = typeof item.key === 'string' ? item.key : ''
     if (!key) continue
+    let csp: McpAppCsp | undefined
+    if (item.csp && typeof item.csp === 'object') {
+      const raw = item.csp as Record<string, unknown>
+      const arr = (k: string): string[] | undefined => {
+        const v = raw[k]
+        return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined
+      }
+      csp = {
+        connectDomains: arr('connectDomains'),
+        resourceDomains: arr('resourceDomains'),
+        frameDomains: arr('frameDomains'),
+        baseUriDomains: arr('baseUriDomains'),
+      }
+    }
     refs.push({
       key,
       uri: typeof item.uri === 'string' ? item.uri : '',
@@ -114,9 +128,24 @@ export function extractResources(source: unknown): McpAppResource[] {
       mimeType: typeof item.mime_type === 'string' ? item.mime_type : '',
       size: typeof item.size === 'number' ? item.size : 0,
       initialData: result,
+      csp,
     })
   }
   return refs
+}
+
+export function buildMessageResourcesFromAgentEvents(events: AgentUIEvent[]): McpAppResource[] {
+  const resources: McpAppResource[] = []
+  const seen = new Set<string>()
+  for (const event of events) {
+    if (event.type !== 'tool-result') continue
+    for (const res of extractResources(event.data)) {
+      if (seen.has(res.key)) continue
+      seen.add(res.key)
+      resources.push(res)
+    }
+  }
+  return resources
 }
 
 export function extractArtifacts(source: unknown): ArtifactRef[] {
