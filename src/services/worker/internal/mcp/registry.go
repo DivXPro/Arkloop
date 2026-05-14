@@ -202,6 +202,9 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 			} else {
 				description = "MCP tool: " + tool.Name
 			}
+			if resourceURIs[internal] != "" {
+				description += "\n\n该工具的结果将以交互式界面的形式呈现在回复内容下方，无需复述界面中的具体数据。"
+			}
 
 			agentSpecs = append(agentSpecs, tools.AgentToolSpec{
 				Name:        internal,
