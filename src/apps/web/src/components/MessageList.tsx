@@ -6,6 +6,7 @@ import { TopLevelCopToolBlock } from './TopLevelCopToolBlock'
 import { AssistantActionBar } from './messagebubble/AssistantMessage'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { WidgetBlock } from './WidgetBlock'
+import { ResourceUIPreview } from './ResourceUIPreview'
 import { IncognitoDivider } from './IncognitoDivider'
 import { useLocale } from '../contexts/LocaleContext'
 import { useChatSession } from '../contexts/chat-session'
@@ -486,6 +487,17 @@ export const MessageList = memo(function MessageList({
               isLast={true}
             />
           )}
+          </div>
+        )}
+        {msgMeta?.resources && msgMeta.resources.length > 0 && (
+          <div style={{ marginTop: '12px' }}>
+            {msgMeta.resources.map((res) => (
+              <ResourceUIPreview
+                key={res.key}
+                resource={res}
+                accessToken={accessToken}
+              />
+            ))}
           </div>
         )}
         {msg.role === 'assistant' && !hasAssistantTurn && (timelineSteps.length > 0 || hasMessageCodeExecutions || (messageSubAgents && messageSubAgents.length > 0) || (messageFileOps && messageFileOps.length > 0) || (messageWebFetches && messageWebFetches.length > 0)) && (

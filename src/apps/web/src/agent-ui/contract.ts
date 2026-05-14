@@ -276,28 +276,11 @@ export type AgentToolResultErrorData = {
   details?: Record<string, unknown>
 }
 
-export type ResourceEvent = {
-  mime_type: string
-  uri?: string
-  text?: string
-  blob_key?: string
-  size?: number
-  preview?: string
-}
-
-export type ImageEvent = {
-  mime_type: string
-  blob_key?: string
-  data_url?: string
-}
-
 export type AgentToolResultData = {
   toolCallId: string
   toolName?: string
   output: unknown
   error?: AgentToolResultErrorData
-  resources?: ResourceEvent[]
-  images?: ImageEvent[]
 }
 
 export type AgentTerminalDeltaData = {
@@ -424,7 +407,7 @@ export type AgentUIMessageChunk<METADATA = unknown, DATA_TYPES extends AgentUIDa
   | { type: 'tool-input-error'; toolCallId: string; toolName: string; input: unknown; errorText: string; title?: string; providerExecuted?: boolean; providerMetadata?: AgentProviderMetadata; dynamic?: boolean }
   | { type: 'tool-approval-request'; approvalId: string; toolCallId: string; isAutomatic?: boolean }
   | { type: 'tool-approval-response'; approvalId: string; approved: boolean; reason?: string; providerExecuted?: boolean; providerMetadata?: AgentProviderMetadata }
-  | { type: 'tool-output-available'; toolCallId: string; output: unknown; preliminary?: boolean; resources?: ResourceEvent[]; images?: ImageEvent[]; providerExecuted?: boolean; providerMetadata?: AgentProviderMetadata; dynamic?: boolean }
+  | { type: 'tool-output-available'; toolCallId: string; output: unknown; preliminary?: boolean; providerExecuted?: boolean; providerMetadata?: AgentProviderMetadata; dynamic?: boolean }
   | { type: 'tool-output-error'; toolCallId: string; errorText: string; providerExecuted?: boolean; providerMetadata?: AgentProviderMetadata; dynamic?: boolean }
   | { type: 'tool-output-denied'; toolCallId: string }
   | { type: 'source-url'; sourceId: string; url: string; title?: string; providerMetadata?: AgentProviderMetadata }

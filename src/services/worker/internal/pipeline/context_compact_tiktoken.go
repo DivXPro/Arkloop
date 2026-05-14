@@ -135,10 +135,7 @@ func contextCompactMediaTokens(m llm.Message) int {
 }
 
 func contextCompactResourceTokens(part llm.ContentPart) int {
-	text := ""
-	if part.Resource != nil {
-		text = part.Resource.Text
-	}
+	text := part.ExtractedText
 	if text == "" && len(part.Data) > 0 {
 		text = string(part.Data)
 	}

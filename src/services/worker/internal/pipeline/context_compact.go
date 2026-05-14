@@ -1396,10 +1396,10 @@ func contextCompactImagePlaceholder(part llm.ContentPart) string {
 
 func contextCompactResourcePlaceholder(part llm.ContentPart) string {
 	tag := "[resource]"
-	if part.Resource != nil {
-		if uri := strings.TrimSpace(part.Resource.URI); uri != "" {
+	if part.Attachment != nil {
+		if uri := strings.TrimSpace(part.Attachment.URI); uri != "" {
 			tag = "[resource uri=" + strconv.Quote(uri) + "]"
-		} else if mimeType := strings.TrimSpace(part.Resource.MimeType); mimeType != "" {
+		} else if mimeType := strings.TrimSpace(part.Attachment.MimeType); mimeType != "" {
 			tag = "[resource mime_type=" + strconv.Quote(mimeType) + "]"
 		}
 	}

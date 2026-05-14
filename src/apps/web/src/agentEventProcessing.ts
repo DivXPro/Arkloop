@@ -6,13 +6,10 @@ import {
   agentEventToolInput,
   agentEventToolOutput,
 } from './agent-ui/event-data'
-import type { ArtifactRef, BrowserActionRef, CodeExecutionRef, FileOpRef, MessageThinkingRef, SubAgentRef, WebFetchRef, WidgetRef } from './storage'
+import type { ArtifactRef, BrowserActionRef, CodeExecutionRef, FileOpRef, MessageThinkingRef, McpAppResource, SubAgentRef, WebFetchRef, WidgetRef } from './storage'
 import { basename, presentationForTool, truncate } from './toolPresentation'
 import { contentText } from './timelineText'
 import { FILE_OP_TOOL_NAMES } from './copSubSegment'
-import { setResourceContent } from './resource-ui-store'
-import { setResourceToolOutput } from './resource-ui-data-store'
-
 const CODE_EXECUTION_CALL_TOOL_NAMES = new Set(['python_execute', 'exec_command'])
 const CODE_EXECUTION_RESULT_TOOL_NAMES = new Set(['python_execute', 'exec_command', 'continue_process', 'terminate_process'])
 const TERMINAL_CONTROL_SEQUENCE_PATTERN = new RegExp(String.raw`\u001b\[[0-9;?]*[ -/]*[@-~]`, 'g')
@@ -66,7 +63,7 @@ function extractFrom(obj: Record<string, unknown>): ArtifactRef[] {
   const artifacts: ArtifactRef[] = []
   const seen = new Set<string>()
 
-  // 1. 从 artifacts 数组提取（已有）
+  // 从 artifacts 数组提取
   const rawArtifacts = obj.artifacts
   if (Array.isArray(rawArtifacts)) {
     for (const item of rawArtifacts) {
@@ -76,7 +73,7 @@ function extractFrom(obj: Record<string, unknown>): ArtifactRef[] {
       if (!key || typeof r.filename !== 'string') continue
       if (seen.has(key)) continue
       seen.add(key)
-      artifacts.push({
+      const artifact: ArtifactRef = {
         key,
         filename: r.filename as string,
         size: typeof r.size === 'number' ? r.size : 0,
@@ -85,52 +82,50 @@ function extractFrom(obj: Record<string, unknown>): ArtifactRef[] {
         display: r.display === 'inline' || r.display === 'panel'
           ? r.display as 'inline' | 'panel'
           : undefined,
-      })
-    }
-  }
-
-  // 2. 从 resources 数组提取 HTML/Markdown resource 为元数据
-  const rawResources = obj.resources
-  if (Array.isArray(rawResources)) {
-    for (const res of rawResources) {
-      if (!res || typeof res !== 'object') continue
-      const r = res as Record<string, unknown>
-      const mimeType = typeof r.mime_type === 'string' ? r.mime_type : ''
-      if (mimeType.startsWith('text/html') || mimeType === 'text/markdown' || mimeType === 'image/svg+xml') {
-        const uri = typeof r.uri === 'string' ? r.uri : ''
-        const text = typeof r.text === 'string' ? r.text : ''
-        const size = typeof r.size === 'number' ? r.size : new TextEncoder().encode(text).length
-        if (uri && text) {
-          setResourceContent(uri, text)
-          // 存储关联的 tool output 数据（供 iframe shim connect() 使用）
-          setResourceToolOutput(uri, obj)
-        }
-        const key = uri || 'resource'
-        if (seen.has(key)) continue
-        seen.add(key)
-        artifacts.push({
-          key,
-          filename: uri ? `${uri.split('/').pop() || 'resource'}.html` : 'resource.html',
-          size,
-          mime_type: mimeType,
-          title: uri || undefined,
-          display: 'inline',
-        })
       }
+      artifacts.push(artifact)
     }
   }
 
   return artifacts
 }
 
+export function extractResources(source: unknown): McpAppResource[] {
+  if (!source || typeof source !== 'object') return []
+  const s = source as Record<string, unknown>
+
+  const nested = s.result ?? s.output
+  if (!nested || typeof nested !== 'object') return []
+  const result = nested as Record<string, unknown>
+
+  const rawResources = result.resources
+  if (!Array.isArray(rawResources)) return []
+
+  const refs: McpAppResource[] = []
+  for (const r of rawResources) {
+    if (!r || typeof r !== 'object') continue
+    const item = r as Record<string, unknown>
+    const key = typeof item.key === 'string' ? item.key : ''
+    if (!key) continue
+    refs.push({
+      key,
+      uri: typeof item.uri === 'string' ? item.uri : '',
+      filename: typeof item.filename === 'string' ? item.filename : '',
+      mimeType: typeof item.mime_type === 'string' ? item.mime_type : '',
+      size: typeof item.size === 'number' ? item.size : 0,
+      initialData: result,
+    })
+  }
+  return refs
+}
+
 export function extractArtifacts(source: unknown): ArtifactRef[] {
   if (!source || typeof source !== 'object') return []
   const s = source as Record<string, unknown>
 
-  // 从 source 本身提取（resources 在 SSE event data 顶层）
   const artifacts = extractFrom(s)
 
-  // 从嵌套的 result/output 中提取（artifacts 通常在 result 内部）
+  // 从嵌套的 result/output 中提取（artifacts 在 result 内部）
   const nested = s.result ?? s.output
   if (nested && typeof nested === 'object') {
     artifacts.push(...extractFrom(nested as Record<string, unknown>))
@@ -144,7 +139,7 @@ export function buildMessageArtifactsFromAgentEvents(events: AgentUIEvent[]): Ar
   const seen = new Set<string>()
   for (const event of events) {
     if (event.type !== 'tool-result') continue
-    // 传入整个 event.data（resources 在 SSE data 顶层；artifacts 在嵌套 result 内部）
+    // 从 event.data 和嵌套 result/output 中提取 artifacts
     for (const artifact of extractArtifacts(event.data)) {
       if (seen.has(artifact.key)) continue
       seen.add(artifact.key)

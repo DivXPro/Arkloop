@@ -1,36 +1,58 @@
 import { useState, useEffect } from 'react'
-import { getResourceContent } from '../resource-ui-store'
-import { getResourceToolOutput } from '../resource-ui-data-store'
-import { ArtifactIframe } from './ArtifactIframe'
+import { apiBaseUrl } from '@arkloop/shared/api'
+import type { McpAppResource } from '../storage'
+import { McpAppIframe } from './McpAppIframe'
 
 type Props = {
-  uri: string
-  title?: string
-  contentType?: string
+  resource: McpAppResource
+  accessToken?: string
 }
 
-export function ResourceUIPreview({ uri, title, contentType }: Props) {
-  const [content, setContent] = useState<string | undefined>(() => getResourceContent(uri))
-  const [toolOutput, setToolOutput] = useState<unknown>(() => getResourceToolOutput(uri))
+export function ResourceUIPreview({ resource, accessToken }: Props) {
+  const [content, setContent] = useState<string | undefined>(undefined)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
-    const c = getResourceContent(uri)
-    const o = getResourceToolOutput(uri)
-    setContent(c)
-    setToolOutput(o)
-  }, [uri])
+    if (!accessToken) return
+    let cancelled = false
+
+    const url = `${apiBaseUrl()}/v1/artifacts/${resource.key}`
+    fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`${res.status}`)
+        const html = await res.text()
+        if (!cancelled) setContent(html)
+      })
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+
+    return () => { cancelled = true }
+  }, [resource.key, accessToken])
+
+  if (error) {
+    return (
+      <div style={{
+        padding: '16px',
+        border: '0.5px solid var(--c-border-subtle)',
+        borderRadius: '10px',
+        color: 'var(--c-status-error)',
+        fontSize: '13px',
+      }}>
+        Failed to load MCP app content
+      </div>
+    )
+  }
 
   if (!content) {
     return null
   }
 
   return (
-    <ArtifactIframe
-      mode="static"
+    <McpAppIframe
+      uri={resource.uri}
       content={content}
-      contentType={contentType}
-      frameTitle={title}
-      initialData={toolOutput}
+      toolOutput={resource.initialData}
       style={{ minHeight: '300px' }}
     />
   )

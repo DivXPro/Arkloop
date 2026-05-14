@@ -214,17 +214,14 @@ export function normalizeAgentEventData(params: {
       }
     }
     case 'tool-result': {
-      const resourcesRaw = record?.resources
-      const imagesRaw = record?.images
+      const resolvedToolName = normalizeToolName(record, toolName)
       return {
         toolCallId: stringField(record, 'toolCallId', 'tool_call_id') ?? eventId,
-        ...(normalizeToolName(record, toolName) ? { toolName: normalizeToolName(record, toolName) } : {}),
+        ...(resolvedToolName ? { toolName: resolvedToolName } : {}),
         output: record && 'output' in record ? record.output : record?.result,
         ...(normalizeToolError(record?.error, errorCode)
           ? { error: normalizeToolError(record?.error, errorCode) }
           : {}),
-        ...(Array.isArray(resourcesRaw) ? { resources: resourcesRaw } : {}),
-        ...(Array.isArray(imagesRaw) ? { images: imagesRaw } : {}),
       }
     }
     case 'terminal-delta': {

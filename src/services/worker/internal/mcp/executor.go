@@ -3,9 +3,12 @@ package mcp
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
+	"arkloop/services/shared/objectstore"
 	"arkloop/services/worker/internal/tools"
 )
 
@@ -117,26 +120,76 @@ func (e *ToolExecutor) Execute(
 
 	content, attachments := splitMCPContent(result.Content)
 
-	// MCP ext-apps: 如果 tool 关联了 UI resource，读取 HTML 内容
+	resultJSON := map[string]any{"content": content}
+
+	// MCP ext-apps: 如果 tool 关联了 UI resource，读取 HTML 内容并上传为 artifact
 	resourceURI := e.resourceURIByToolName[toolName]
-	if resourceURI != "" {
+	if resourceURI == "" {
+		slog.InfoContext(ctx, "mcp ext-apps: no resourceURI for tool", "tool_name", toolName, "server_id", e.server.ServerID)
+	} else {
 		resourceContent, err := client.ReadResource(ctx, resourceURI, timeoutMs)
-		if err == nil && (resourceContent.Text != "" || len(resourceContent.Blob) > 0) {
+		if err != nil {
+			slog.WarnContext(ctx, "mcp ext-apps: read resource failed", "tool_name", toolName, "resource_uri", resourceURI, "err", err.Error())
+		} else if resourceContent.Text == "" && len(resourceContent.Blob) == 0 {
+			slog.WarnContext(ctx, "mcp ext-apps: resource content empty", "tool_name", toolName, "resource_uri", resourceURI)
+		} else {
 			data := []byte(resourceContent.Text)
 			if len(data) == 0 {
 				data = resourceContent.Blob
 			}
-			attachments = append([]tools.ContentAttachment{{
-				MimeType: resourceContent.MimeType,
-				Data:     data,
-				URI:      resourceContent.URI,
-				Text:     resourceContent.Text,
-			}}, attachments...)
+			mimeType := resourceContent.MimeType
+			if mimeType == "" {
+				mimeType = "text/html;profile=mcp-app"
+			} else if !strings.Contains(mimeType, "profile=") {
+				mimeType = mimeType + ";profile=mcp-app"
+			}
+
+			store := pool.ArtifactStore()
+			if store == nil {
+				slog.WarnContext(ctx, "mcp ext-apps: artifact store nil, falling back to attachment", "tool_name", toolName)
+				attachments = append([]tools.ContentAttachment{{
+					MimeType: mimeType,
+					Data:     data,
+					URI:      resourceContent.URI,
+					Text:     resourceContent.Text,
+				}}, attachments...)
+			} else {
+				key := buildMcpAppArtifactKey(execCtx, toolName)
+				filename := fmt.Sprintf("mcp-app-%s.html", toolName)
+				accountID := "_anonymous"
+				if execCtx.AccountID != nil {
+					accountID = execCtx.AccountID.String()
+				}
+				var threadID *string
+				if execCtx.ThreadID != nil {
+					value := execCtx.ThreadID.String()
+					threadID = &value
+				}
+				metadata := objectstore.ArtifactMetadata(objectstore.ArtifactOwnerKindRun, execCtx.RunID.String(), accountID, threadID)
+				putErr := store.PutObject(ctx, key, data, objectstore.PutOptions{
+					ContentType: mimeType,
+					Metadata:    metadata,
+				})
+				if putErr != nil {
+					slog.ErrorContext(ctx, "mcp ext-apps: put artifact failed", "tool_name", toolName, "key", key, "err", putErr.Error())
+				} else {
+					resultJSON["resources"] = []map[string]any{
+						{
+							"key":       key,
+							"uri":       resourceURI,
+							"filename":  filename,
+							"size":      len(data),
+							"mime_type": mimeType,
+						},
+					}
+					slog.InfoContext(ctx, "mcp ext-apps: artifact uploaded", "tool_name", toolName, "key", key, "size", len(data))
+				}
+			}
 		}
 	}
 
 	return tools.ExecutionResult{
-		ResultJSON:   map[string]any{"content": content},
+		ResultJSON:   resultJSON,
 		ContentParts: attachments,
 		DurationMs:   durationMs(started),
 	}
@@ -328,6 +381,14 @@ func mapKeys(m map[string]string) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+func buildMcpAppArtifactKey(execCtx tools.ExecutionContext, toolName string) string {
+	accountID := "_anonymous"
+	if execCtx.AccountID != nil {
+		accountID = execCtx.AccountID.String()
+	}
+	return fmt.Sprintf("%s/%s/mcp-app-%s.html", accountID, execCtx.RunID.String(), toolName)
 }
 
 // extractToolResourceURI 从 Tool 的 _meta.ui.resourceUri 提取关联的 UI resource URI

@@ -15,18 +15,11 @@ const (
 )
 
 type AttachmentRef struct {
-	Key      string `json:"key"`
-	Filename string `json:"filename"`
-	MimeType string `json:"mime_type"`
-	Size     int64  `json:"size"`
-}
-
-type ResourceRef struct {
-	URI      string `json:"uri,omitempty"`
+	Key      string `json:"key,omitempty"`
+	Filename string `json:"filename,omitempty"`
 	MimeType string `json:"mime_type,omitempty"`
-	Text     string `json:"text,omitempty"`
-	BlobKey  string `json:"blob_key,omitempty"`
 	Size     int64  `json:"size,omitempty"`
+	URI      string `json:"uri,omitempty"`
 }
 
 type Part struct {
@@ -34,7 +27,6 @@ type Part struct {
 	Text          string         `json:"text,omitempty"`
 	Attachment    *AttachmentRef `json:"attachment,omitempty"`
 	ExtractedText string         `json:"extracted_text,omitempty"`
-	Resource      *ResourceRef   `json:"resource,omitempty"`
 }
 
 type Content struct {
@@ -99,12 +91,13 @@ func Normalize(parts []Part) (Content, error) {
 				ExtractedText: strings.TrimSpace(part.ExtractedText),
 			})
 		case PartTypeResource:
-			if part.Resource == nil {
-				return Content{}, fmt.Errorf("resource part requires resource ref")
+			if part.Attachment == nil || strings.TrimSpace(part.Attachment.URI) == "" {
+				return Content{}, fmt.Errorf("resource part requires attachment with uri")
 			}
 			normalized = append(normalized, Part{
-				Type:     PartTypeResource,
-				Resource: part.Resource,
+				Type:          PartTypeResource,
+				Attachment:    part.Attachment,
+				ExtractedText: strings.TrimSpace(part.ExtractedText),
 			})
 		default:
 			return Content{}, fmt.Errorf("unsupported content part type")
@@ -189,8 +182,8 @@ func Projection(content Content, limit int) string {
 			}
 			blocks = append(blocks, block)
 		case PartTypeResource:
-			if part.Resource != nil && part.Resource.URI != "" {
-				blocks = append(blocks, fmt.Sprintf("[Resource: %s]", part.Resource.URI))
+			if part.Attachment != nil && strings.TrimSpace(part.Attachment.URI) != "" {
+				blocks = append(blocks, fmt.Sprintf("[Resource: %s]", strings.TrimSpace(part.Attachment.URI)))
 			} else {
 				blocks = append(blocks, "[Resource]")
 			}
@@ -229,7 +222,10 @@ func cleanType(raw string, part Part) string {
 	if trimmed != "" {
 		return trimmed
 	}
-	if part.Resource != nil {
+	if strings.TrimSpace(raw) == PartTypeResource {
+		return PartTypeResource
+	}
+	if part.Attachment != nil && strings.TrimSpace(part.Attachment.URI) != "" {
 		return PartTypeResource
 	}
 	if part.Attachment == nil {

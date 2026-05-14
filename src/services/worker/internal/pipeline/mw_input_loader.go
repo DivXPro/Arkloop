@@ -1491,37 +1491,38 @@ func BuildMessagePartsWithOptions(ctx context.Context, store MessageAttachmentSt
 				Data:       dataBytes,
 			})
 		case messagecontent.PartTypeResource:
-			if part.Resource == nil {
-				return nil, fmt.Errorf("resource part requires resource ref")
+			if part.Attachment == nil || strings.TrimSpace(part.Attachment.URI) == "" {
+				return nil, fmt.Errorf("resource part requires attachment with uri")
 			}
-			if part.Resource.Text != "" {
-				resourceCopy := *part.Resource
+			if part.ExtractedText != "" {
+				attachmentCopy := *part.Attachment
 				parts = append(parts, llm.ContentPart{
-					Type:     messagecontent.PartTypeResource,
-					Resource: &resourceCopy,
-					Data:     []byte(part.Resource.Text),
+					Type:          messagecontent.PartTypeResource,
+					Attachment:    &attachmentCopy,
+					Data:          []byte(part.ExtractedText),
+					ExtractedText: part.ExtractedText,
 				})
 				continue
 			}
-			if part.Resource.BlobKey != "" {
+			if strings.TrimSpace(part.Attachment.Key) != "" {
 				if store == nil {
 					return nil, fmt.Errorf("message attachment store not configured")
 				}
-				dataBytes, contentType, err := store.GetWithContentType(ctx, part.Resource.BlobKey)
+				dataBytes, contentType, err := store.GetWithContentType(ctx, part.Attachment.Key)
 				if err != nil {
 					if objectstore.IsNotFound(err) {
 						return nil, fmt.Errorf("resource blob not found")
 					}
 					return nil, err
 				}
-				resourceCopy := *part.Resource
+				attachmentCopy := *part.Attachment
 				if strings.TrimSpace(contentType) != "" {
-					resourceCopy.MimeType = contentType
+					attachmentCopy.MimeType = contentType
 				}
 				parts = append(parts, llm.ContentPart{
-					Type:     messagecontent.PartTypeResource,
-					Resource: &resourceCopy,
-					Data:     dataBytes,
+					Type:       messagecontent.PartTypeResource,
+					Attachment: &attachmentCopy,
+					Data:       dataBytes,
 				})
 				continue
 			}

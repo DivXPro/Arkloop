@@ -176,8 +176,13 @@ func ComposeNativeEngine(ctx context.Context, pool *pgxpool.Pool, directPool *pg
 	allLlmSpecs = append(allLlmSpecs, sandboxtool.BrowserLlmSpec)
 	allLlmSpecs = append(allLlmSpecs, memorytool.MemoryLlmSpecs()...)
 
+	artifactStore, err := openBucket(ctx, storageBucketOpener, objectstore.ArtifactBucket)
+	if err != nil {
+		return nil, fmt.Errorf("open artifact store: %w", err)
+	}
+
 	// 全局 MCP pool，用于 env-loaded 工具及 per-run account 工具的连接复用
-	mcpPool := mcp.NewPool(mcp.WithAuthStore(mcp.NewDBAuthStore(pool)))
+	mcpPool := mcp.NewPool(mcp.WithAuthStore(mcp.NewDBAuthStore(pool)), mcp.WithArtifactStore(artifactStore))
 	mcpRegistration, err := mcp.DiscoverFromEnv(ctx, mcpPool)
 	if err != nil {
 		return nil, err
@@ -210,11 +215,6 @@ func ComposeNativeEngine(ctx context.Context, pool *pgxpool.Pool, directPool *pg
 	}
 	runControlHub := pipeline.NewRunControlHub()
 	runControlHub.Start(ctx, listenPool)
-
-	artifactStore, err := openBucket(ctx, storageBucketOpener, objectstore.ArtifactBucket)
-	if err != nil {
-		return nil, fmt.Errorf("open artifact store: %w", err)
-	}
 
 	var messageAttachmentStore objectstore.Store
 	if s3Bucket := strings.TrimSpace(os.Getenv("ARKLOOP_S3_BUCKET")); s3Bucket != "" && storageBucketOpener != nil {

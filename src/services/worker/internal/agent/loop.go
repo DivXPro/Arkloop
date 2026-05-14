@@ -3552,37 +3552,33 @@ func toolResultFromExecution(toolCallID string, toolName string, displayDescript
 	}
 	var contentParts []llm.ContentPart
 	for _, att := range result.ContentParts {
-		mimeType := strings.TrimSpace(att.MimeType)
-
-		// Image 类型
-		if strings.HasPrefix(mimeType, "image/") {
-			attachment := &messagecontent.AttachmentRef{
-				MimeType: att.MimeType,
-			}
-			if key := strings.TrimSpace(att.AttachmentKey); key != "" {
-				attachment.Key = key
-			}
-			contentParts = append(contentParts, llm.ContentPart{
-				Type:       messagecontent.PartTypeImage,
-				Data:       att.Data,
-				Attachment: attachment,
-			})
-			continue
+		attachment := &messagecontent.AttachmentRef{
+			MimeType: att.MimeType,
+		}
+		if key := strings.TrimSpace(att.AttachmentKey); key != "" {
+			attachment.Key = key
+		}
+		if uri := strings.TrimSpace(att.URI); uri != "" {
+			attachment.URI = uri
 		}
 
-		// Resource 类型
-		if att.URI != "" || len(att.Data) > 0 {
-			contentParts = append(contentParts, llm.ContentPart{
-				Type: messagecontent.PartTypeResource,
-				Data: att.Data,
-				Resource: &messagecontent.ResourceRef{
-					URI:      att.URI,
-					MimeType: att.MimeType,
-					Text:     att.Text,
-				},
-			})
+		part := llm.ContentPart{
+			Data:          att.Data,
+			Attachment:    attachment,
+			ExtractedText: att.Text,
 		}
+		if attachment.URI != "" {
+			part.Type = messagecontent.PartTypeResource
+		} else if strings.HasPrefix(strings.TrimSpace(att.MimeType), "image/") {
+			part.Type = messagecontent.PartTypeImage
+		} else if len(att.Data) > 0 {
+			part.Type = messagecontent.PartTypeFile
+		} else {
+			part.Type = messagecontent.PartTypeImage
+		}
+		contentParts = append(contentParts, part)
 	}
+
 	return llm.StreamToolResult{
 		ToolCallID:         toolCallID,
 		ToolName:           toolName,
