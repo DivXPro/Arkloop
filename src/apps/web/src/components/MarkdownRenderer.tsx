@@ -50,7 +50,7 @@ const WINDOWS_ABSOLUTE_URL_RE = /^[a-zA-Z]:[\\/]/
 
 function isDocumentArtifact(artifact: ArtifactRef): boolean {
   if (artifact.display === 'panel') return true
-  return !artifact.mime_type.startsWith('image/') && artifact.mime_type !== 'text/html'
+  return !artifact.mime_type.startsWith('image/') && !artifact.mime_type.startsWith('text/html')
 }
 
 function isDocumentResource(resource: ResourceRef): boolean {
@@ -344,7 +344,7 @@ function ArtifactAwareImg({ src, alt }: { src?: string; alt?: string }) {
     if (artifact.mime_type.startsWith('image/')) {
       return <ArtifactImage artifact={artifact} accessToken={accessToken} />
     }
-    if (artifact.mime_type === 'text/html') {
+    if (artifact.mime_type.startsWith('text/html')) {
       return <ArtifactHtmlPreview artifact={artifact} accessToken={accessToken} />
     }
     if (onOpenDocument && isDocumentArtifact(artifact)) {

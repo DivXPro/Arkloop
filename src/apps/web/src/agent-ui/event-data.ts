@@ -213,15 +213,17 @@ export function normalizeAgentEventData(params: {
         ...(stringField(record, 'llmName', 'llm_name') ? { llmName: stringField(record, 'llmName', 'llm_name') } : {}),
       }
     }
-    case 'tool-result':
+    case 'tool-result': {
+      const resolvedToolName = normalizeToolName(record, toolName)
       return {
         toolCallId: stringField(record, 'toolCallId', 'tool_call_id') ?? eventId,
-        ...(normalizeToolName(record, toolName) ? { toolName: normalizeToolName(record, toolName) } : {}),
+        ...(resolvedToolName ? { toolName: resolvedToolName } : {}),
         output: record && 'output' in record ? record.output : record?.result,
         ...(normalizeToolError(record?.error, errorCode)
           ? { error: normalizeToolError(record?.error, errorCode) }
           : {}),
       }
+    }
     case 'terminal-delta': {
       const stream = rawType === 'terminal.stderr_delta'
         ? 'stderr'

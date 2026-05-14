@@ -94,6 +94,8 @@ type ContentAttachment struct {
 	MimeType      string
 	Data          []byte
 	AttachmentKey string
+	URI           string // MCP resource URI（如 ui://dashboard）
+	Text          string // 文本型 resource 的原始文本（如 HTML）
 }
 
 type ExecutionResult struct {

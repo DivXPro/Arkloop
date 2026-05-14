@@ -378,7 +378,11 @@ function agentEventToMessageChunks(uiEvent: AgentUIEvent, state: MessageChunkLif
       })
       return chunks
     }
-    chunks.push({ type: 'tool-output-available', toolCallId: data.toolCallId, output: data.output })
+    chunks.push({
+      type: 'tool-output-available',
+      toolCallId: data.toolCallId,
+      output: data.output,
+    })
     return chunks
   }
 

@@ -3270,7 +3270,9 @@ func toolResultMessage(result llm.StreamToolResult) llm.Message {
 		envelope["display_description"] = result.DisplayDescription
 	}
 	if result.ResultJSON != nil {
-		envelope["result"] = result.ResultJSON
+		cleaned := copyMap(result.ResultJSON)
+		delete(cleaned, "resources")
+		envelope["result"] = cleaned
 	}
 	if result.Error != nil {
 		envelope["error"] = result.Error.ToJSON()
@@ -3558,12 +3560,27 @@ func toolResultFromExecution(toolCallID string, toolName string, displayDescript
 		if key := strings.TrimSpace(att.AttachmentKey); key != "" {
 			attachment.Key = key
 		}
-		contentParts = append(contentParts, llm.ContentPart{
-			Type:       messagecontent.PartTypeImage,
-			Data:       att.Data,
-			Attachment: attachment,
-		})
+		if uri := strings.TrimSpace(att.URI); uri != "" {
+			attachment.URI = uri
+		}
+
+		part := llm.ContentPart{
+			Data:          att.Data,
+			Attachment:    attachment,
+			ExtractedText: att.Text,
+		}
+		if attachment.URI != "" {
+			part.Type = messagecontent.PartTypeResource
+		} else if strings.HasPrefix(strings.TrimSpace(att.MimeType), "image/") {
+			part.Type = messagecontent.PartTypeImage
+		} else if len(att.Data) > 0 {
+			part.Type = messagecontent.PartTypeFile
+		} else {
+			part.Type = messagecontent.PartTypeImage
+		}
+		contentParts = append(contentParts, part)
 	}
+
 	return llm.StreamToolResult{
 		ToolCallID:         toolCallID,
 		ToolName:           toolName,

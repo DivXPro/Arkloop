@@ -1449,6 +1449,7 @@ export const ChatView = memo(function ChatView() {
                 assistantTurn: replayTurn.segments.length > 0 ? replayTurn : null,
                 sources: replaySearchSteps.flatMap((step) => step.sources ?? []),
                 artifacts: replayArtifacts,
+                resources: [],
                 widgets: replayWidgets,
                 codeExecutions: replayExecs,
                 browserActions: replayBrowserActions,

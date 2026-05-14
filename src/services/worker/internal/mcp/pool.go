@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"arkloop/services/shared/objectstore"
 )
 
 // Client 是对单个 MCP Server 连接的抽象，stdio 和 HTTP 传输都实现此接口。
 type Client interface {
 	ListTools(ctx context.Context, timeoutMs int) ([]Tool, error)
 	CallTool(ctx context.Context, name string, arguments map[string]any, timeoutMs int) (ToolCallResult, error)
+	ListResources(ctx context.Context, timeoutMs int) ([]Resource, error)
+	ReadResource(ctx context.Context, uri string, timeoutMs int) (ResourceContent, error)
 	IsHealthy(ctx context.Context) bool
 	Close() error
 }
@@ -17,9 +21,10 @@ type Client interface {
 // Pool 持有按 (accountID, serverID) 键控的 MCP Client，用于跨 run 的连接复用。
 // 全局（env 加载）的工具使用空 accountID（key 形如 ":serverID"）。
 type Pool struct {
-	mu        sync.Mutex
-	clients   map[string]Client
-	authStore AuthStore
+	mu            sync.Mutex
+	clients       map[string]Client
+	authStore     AuthStore
+	artifactStore objectstore.Store
 }
 
 type BorrowMeta struct {
@@ -32,6 +37,21 @@ func WithAuthStore(store AuthStore) PoolOption {
 	return func(p *Pool) {
 		p.authStore = store
 	}
+}
+
+func WithArtifactStore(store objectstore.Store) PoolOption {
+	return func(p *Pool) {
+		p.artifactStore = store
+	}
+}
+
+func (p *Pool) ArtifactStore() objectstore.Store {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.artifactStore
 }
 
 func NewPool(options ...PoolOption) *Pool {
