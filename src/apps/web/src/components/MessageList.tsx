@@ -471,6 +471,17 @@ export const MessageList = memo(function MessageList({
                 renderSegment(seg, si, historicalSegments, currentRunMessageLive && si === historicalSegments.length - 1)
               )
             })()}
+          {msgMeta?.resources && msgMeta.resources.length > 0 && (
+            <div style={{ marginTop: '12px' }}>
+              {msgMeta.resources.map((res) => (
+                <ResourceUIPreview
+                  key={res.key}
+                  resource={res}
+                  accessToken={accessToken}
+                />
+              ))}
+            </div>
+          )}
           {idx === messages.length - 1 && !isStreaming && !sending && (
             <AssistantActionBar
               textToCopy={assistantTurnPlainText(historicalTurn!)}
@@ -487,17 +498,6 @@ export const MessageList = memo(function MessageList({
               isLast={true}
             />
           )}
-          </div>
-        )}
-        {msgMeta?.resources && msgMeta.resources.length > 0 && (
-          <div style={{ marginTop: '12px' }}>
-            {msgMeta.resources.map((res) => (
-              <ResourceUIPreview
-                key={res.key}
-                resource={res}
-                accessToken={accessToken}
-              />
-            ))}
           </div>
         )}
         {msg.role === 'assistant' && !hasAssistantTurn && (timelineSteps.length > 0 || hasMessageCodeExecutions || (messageSubAgents && messageSubAgents.length > 0) || (messageFileOps && messageFileOps.length > 0) || (messageWebFetches && messageWebFetches.length > 0)) && (

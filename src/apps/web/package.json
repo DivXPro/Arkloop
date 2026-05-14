@@ -10,7 +10,8 @@
     "type-check": "tsc -b",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "mkdir -p public/mcp-ext-apps && cp node_modules/@modelcontextprotocol/ext-apps/dist/src/app-with-deps.js public/mcp-ext-apps/app-with-deps.js"
   },
   "dependencies": {
     "@arkloop/shared": "workspace:*",

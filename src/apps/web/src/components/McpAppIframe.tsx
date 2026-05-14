@@ -3,8 +3,6 @@ import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { McpAppCsp } from '../storage'
 
-const CDN_DOMAINS = 'https://cdn.jsdelivr.net https://unpkg.com https://esm.sh'
-
 function buildCSP(csp?: McpAppCsp): string {
   const resourceDomains = csp?.resourceDomains ?? []
   const connectDomains = csp?.connectDomains ?? []
@@ -12,19 +10,18 @@ function buildCSP(csp?: McpAppCsp): string {
   const baseUriDomains = csp?.baseUriDomains ?? []
 
   const resourceSrc = resourceDomains.join(' ')
-  const scriptSrc = [CDN_DOMAINS, ...resourceDomains].join(' ')
 
   return [
     "default-src 'none'",
-    `script-src 'unsafe-inline' ${scriptSrc}`,
-    `style-src 'unsafe-inline' ${resourceSrc}`,
-    `img-src data: blob: ${resourceSrc}`,
-    `font-src ${resourceSrc || "'self'"}`,
+    `script-src 'self' 'unsafe-inline' ${resourceSrc}`,
+    `style-src 'self' 'unsafe-inline' ${resourceSrc}`,
+    `img-src 'self' data: blob: ${resourceSrc}`,
+    `font-src 'self' ${resourceSrc}`,
+    `media-src 'self' data: ${resourceSrc}`,
     frameDomains.length > 0 ? `frame-src ${frameDomains.join(' ')}` : "frame-src 'none'",
     connectDomains.length > 0 ? `connect-src ${connectDomains.join(' ')}` : "connect-src 'none'",
     baseUriDomains.length > 0 ? `base-uri ${baseUriDomains.join(' ')}` : "base-uri 'self'",
     "object-src 'none'",
-    `media-src ${resourceSrc || "'self' data:"}`,
   ].filter(Boolean).join('; ')
 }
 
@@ -46,8 +43,7 @@ ${themeCSS}
 <script type="importmap">
 {
   "imports": {
-    "@modelcontextprotocol/ext-apps": "https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@1/dist/src/app-with-deps.js",
-    "@modelcontextprotocol/ext-apps/react": "https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@1/dist/src/react/react-with-deps.js"
+    "@modelcontextprotocol/ext-apps": "/mcp-ext-apps/app-with-deps.js"
   }
 }
 </script>
@@ -166,70 +162,62 @@ export function McpAppIframe({ uri, content, toolOutput, csp, onOpenLink, style,
     }
   }, [toolOutput, sendToolResult])
 
-  // Connect AppBridge when iframe srcDoc changes (iframe mounts or reloads)
-  useEffect(() => {
+  // Connect AppBridge when iframe loads (guarantees all scripts are ready)
+  const handleLoad = useCallback(async () => {
     const iframe = iframeRef.current
-    if (!iframe?.contentWindow) {
-      return
+    if (!iframe?.contentWindow) return
+
+    // Close previous bridge if any
+    const prevBridge = bridgeRef.current
+    if (prevBridge) {
+      bridgeRef.current = null
+      isConnectedRef.current = false
+      prevBridge.close().catch(() => {})
     }
 
-    let cancelled = false
+    const transport = new PostMessageTransport(
+      iframe.contentWindow,
+      iframe.contentWindow,
+    )
+    const bridge = new AppBridge(
+      null,
+      { name: 'arkloop', version: '1.0.0' },
+      { serverTools: { listChanged: true } },
+    )
 
-    const setup = async () => {
-      // Yield to browser so iframe begins parsing; then connect before
-      // the app-side script calls its own connect().
-      await new Promise((r) => setTimeout(r, 50))
-      if (cancelled) return
+    bridge.onopenlink = async (request) => {
+      onOpenLink?.(request.url)
+      return { success: true }
+    }
 
-      const transport = new PostMessageTransport(
-        iframe.contentWindow!,
-        iframe.contentWindow!,
-      )
-      const bridge = new AppBridge(
-        null,
-        { name: 'arkloop', version: '1.0.0' },
-        { serverTools: { listChanged: true } },
-      )
+    bridge.oncalltool = async () => {
+      throw new Error('Tool calling not yet implemented')
+    }
 
-      bridge.onopenlink = async (request) => {
-        onOpenLink?.(request.url)
-        return { success: true }
-      }
-
-      bridge.oncalltool = async () => {
-        throw new Error('Tool calling not yet implemented')
-      }
-
-      bridge.oninitialized = () => {
-        if (cancelled) return
-        isConnectedRef.current = true
-        if (pendingToolResultRef.current !== undefined) {
-          sendToolResult(bridge, pendingToolResultRef.current)
-          pendingToolResultRef.current = undefined
-        }
-      }
-
-      try {
-        await bridge.connect(transport)
-        if (cancelled) {
-          bridge.close().catch(() => {})
-          return
-        }
-        bridgeRef.current = bridge
-      } catch (err) {
-        console.error('[McpAppIframe] AppBridge connect failed:', err)
+    bridge.oninitialized = () => {
+      isConnectedRef.current = true
+      if (pendingToolResultRef.current !== undefined) {
+        sendToolResult(bridge, pendingToolResultRef.current)
+        pendingToolResultRef.current = undefined
       }
     }
 
-    setup()
+    try {
+      await bridge.connect(transport)
+      bridgeRef.current = bridge
+    } catch (err) {
+      console.error('[McpAppIframe] AppBridge connect failed:', err)
+    }
+  }, [onOpenLink, sendToolResult])
 
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
-      cancelled = true
       isConnectedRef.current = false
       bridgeRef.current?.close().catch(() => {})
       bridgeRef.current = null
     }
-  }, [srcDoc, onOpenLink, sendToolResult])
+  }, [])
 
   // Listen for resize messages from iframe
   useEffect(() => {
@@ -270,7 +258,8 @@ export function McpAppIframe({ uri, content, toolOutput, csp, onOpenLink, style,
       ref={iframeRef}
       srcDoc={srcDoc}
       title={`mcp-app-${uri}`}
-      sandbox="allow-scripts"
+      sandbox="allow-scripts allow-same-origin"
+      onLoad={handleLoad}
       style={{
         width: '100%',
         minHeight: '200px',
