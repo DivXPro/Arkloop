@@ -120,13 +120,21 @@ func TestAccountSettingsGetAndPatchPipelineTraceEnabled(t *testing.T) {
 	if initial.PromptCacheDebugEnabled {
 		t.Fatal("expected prompt cache debug to be disabled by default")
 	}
+	if initial.NewThreadChatModel != "" {
+		t.Fatalf("expected empty new thread chat model, got %q", initial.NewThreadChatModel)
+	}
 
 	patchResp := doJSONAccount(env.handler, nethttp.MethodPatch, "/v1/account/settings", map[string]any{
-		"pipeline_trace_enabled":    true,
+		"pipeline_trace_enabled":     true,
 		"prompt_cache_debug_enabled": true,
+		"new_thread_chat_model":      " account^gpt-command ",
 	}, authHeader(env.accessToken))
 	if patchResp.Code != nethttp.StatusOK {
 		t.Fatalf("patch status = %d body=%s", patchResp.Code, patchResp.Body.String())
+	}
+	patched := decodeJSONBodyAccount[accountSettingsResponse](t, patchResp.Body.Bytes())
+	if patched.NewThreadChatModel != "account^gpt-command" {
+		t.Fatalf("new_thread_chat_model response = %q", patched.NewThreadChatModel)
 	}
 
 	accountID := mustUUID(t, env.accountID)
@@ -140,6 +148,9 @@ func TestAccountSettingsGetAndPatchPipelineTraceEnabled(t *testing.T) {
 	if !promptCacheDebugEnabledFromJSON(account.SettingsJSON) {
 		t.Fatalf("expected prompt cache debug to be stored in settings_json")
 	}
+	if newThreadChatModelFromJSON(account.SettingsJSON) != "account^gpt-command" {
+		t.Fatalf("expected new_thread_chat_model to be stored in settings_json")
+	}
 }
 
 func TestAccountSettingsPatchPreservesOtherKeys(t *testing.T) {
@@ -151,7 +162,7 @@ func TestAccountSettingsPatchPreservesOtherKeys(t *testing.T) {
 	}
 
 	resp := doJSONAccount(env.handler, nethttp.MethodPatch, "/v1/account/settings", map[string]any{
-		"pipeline_trace_enabled":    true,
+		"pipeline_trace_enabled":     true,
 		"prompt_cache_debug_enabled": true,
 	}, authHeader(env.accessToken))
 	if resp.Code != nethttp.StatusOK {

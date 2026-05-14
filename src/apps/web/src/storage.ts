@@ -6,7 +6,8 @@ import type { UploadedThreadAttachment } from './api'
 import type { FontFamily, CodeFontFamily, FontSize, ThemePreset, ThemeDefinition, ThemeBackgroundImage } from './themes/types'
 import type { AssistantTurnSegment, AssistantTurnUi, CopBlockItem, TurnToolCallRef } from './assistantTurnSegments'
 import type { AgentUIEvent } from './agent-ui/contract'
-import type { ArtifactResourceRef, BrowserResourceRef, LocalFileResourceRef, ResourceRef, WorkspaceFileResourceRef } from './components/resource-preview/types'
+import { isTimelineText, type TimelineText } from './timelineText'
+import type { ArtifactResourceRef, BrowserResourceRef, LocalFileResourceRef, WorkspaceFileResourceRef } from './components/resource-preview/types'
 import { browserFaviconUrl, browserTitleFromUrl, normalizeBrowserUrl } from './components/resource-preview/browserIdentity'
 import {
   normalizeAgentEventData,
@@ -53,6 +54,7 @@ const DRAFT_STORAGE_EVICTION_PREFIXES = [
   'arkloop:web:msg_browser_actions:',
   'arkloop:web:msg_sources:',
   'arkloop:web:msg_artifacts:',
+  'arkloop:web:msg_resources:',
   'arkloop:web:msg_search_steps:',
   'arkloop:web:msg_cop_blocks:',
   'arkloop:web:msg_memory_actions:',
@@ -738,6 +740,23 @@ export type ArtifactRef = {
   display?: 'inline' | 'panel'
 }
 
+export type McpAppCsp = {
+  connectDomains?: string[]
+  resourceDomains?: string[]
+  frameDomains?: string[]
+  baseUriDomains?: string[]
+}
+
+export type McpAppResource = {
+  key: string
+  uri: string
+  filename: string
+  mimeType: string
+  size: number
+  initialData?: unknown
+  csp?: McpAppCsp
+}
+
 function messageArtifactsKey(messageId: string): string {
   return `arkloop:web:msg_artifacts:${messageId}`
 }
@@ -757,6 +776,28 @@ export function writeMessageArtifacts(messageId: string, artifacts: ArtifactRef[
   if (!canUseLocalStorage() || !messageId || artifacts.length === 0) return
   try {
     writeEphemeralStorageItem(messageArtifactsKey(messageId), JSON.stringify(artifacts))
+  } catch { /* ignore */ }
+}
+
+function messageResourcesKey(messageId: string): string {
+  return `arkloop:web:msg_resources:${messageId}`
+}
+
+export function readMessageResources(messageId: string): McpAppResource[] | null {
+  if (!canUseLocalStorage() || !messageId) return null
+  try {
+    const raw = localStorage.getItem(messageResourcesKey(messageId))
+    if (!raw) return null
+    return JSON.parse(raw) as McpAppResource[]
+  } catch {
+    return null
+  }
+}
+
+export function writeMessageResources(messageId: string, resources: McpAppResource[]): void {
+  if (!canUseLocalStorage() || !messageId || resources.length === 0) return
+  try {
+    writeEphemeralStorageItem(messageResourcesKey(messageId), JSON.stringify(resources))
   } catch { /* ignore */ }
 }
 
@@ -822,6 +863,7 @@ export type CodeExecutionRef = {
   mode?: 'buffered' | 'follow' | 'stdin' | 'pty'
   code?: string
   displayDescription?: string
+  displayText?: TimelineText
   output?: string
   emptyLabel?: string
   exitCode?: number
@@ -848,6 +890,7 @@ function isCodeExecutionRef(value: unknown): value is CodeExecutionRef {
   if (!isCodeExecutionStatus(item.status)) return false
   if (item.code != null && typeof item.code !== 'string') return false
   if (item.output != null && typeof item.output !== 'string') return false
+  if (item.displayText != null && !isTimelineText(item.displayText)) return false
   if (item.emptyLabel != null && typeof item.emptyLabel !== 'string') return false
   if (item.exitCode != null && typeof item.exitCode !== 'number') return false
   if (item.processRef != null && typeof item.processRef !== 'string') return false
@@ -901,6 +944,7 @@ export type ThinkingSegmentRef = {
   kind: string
   mode: string
   label: string
+  text?: TimelineText
   content: string
 }
 
@@ -950,6 +994,7 @@ export type MessageSearchStepRef = {
   id: string
   kind: 'planning' | 'searching' | 'reviewing' | 'finished'
   label: string
+  text?: TimelineText
   status: 'active' | 'done'
   queries?: string[]
   seq?: number
@@ -974,6 +1019,7 @@ export function readMessageSearchSteps(messageId: string): MessageSearchStepRef[
         const id = typeof item.id === 'string' ? item.id : ''
         const kind = item.kind
         const label = typeof item.label === 'string' ? item.label : ''
+        const text = isTimelineText(item.text) ? item.text : undefined
         const status = item.status
         const seq = typeof item.seq === 'number' ? item.seq : undefined
         const resultSeq = typeof item.resultSeq === 'number' ? item.resultSeq : undefined
@@ -995,7 +1041,7 @@ export function readMessageSearchSteps(messageId: string): MessageSearchStepRef[
         if (!id) return null
         if (kind !== 'planning' && kind !== 'searching' && kind !== 'reviewing' && kind !== 'finished') return null
         if (status !== 'active' && status !== 'done') return null
-        return { id, kind, label, status, queries, seq, ...(resultSeq != null ? { resultSeq } : {}), ...(sources && sources.length > 0 ? { sources } : {}) }
+        return { id, kind, label, ...(text ? { text } : {}), status, queries, seq, ...(resultSeq != null ? { resultSeq } : {}), ...(sources && sources.length > 0 ? { sources } : {}) }
       })
       .filter((step): step is MessageSearchStepRef => step != null)
     return steps.length > 0 ? steps : null
@@ -1107,6 +1153,7 @@ function parseStepRef(s: Record<string, unknown>): MessageSearchStepRef | null {
   const id = typeof s.id === 'string' ? s.id : ''
   const kind = s.kind
   const label = typeof s.label === 'string' ? s.label : ''
+  const text = isTimelineText(s.text) ? s.text : undefined
   const status = s.status
   const seq = typeof s.seq === 'number' ? s.seq : undefined
   const resultSeq = typeof s.resultSeq === 'number' ? s.resultSeq : undefined
@@ -1116,7 +1163,7 @@ function parseStepRef(s: Record<string, unknown>): MessageSearchStepRef | null {
   if (!id) return null
   if (kind !== 'planning' && kind !== 'searching' && kind !== 'reviewing' && kind !== 'finished') return null
   if (status !== 'active' && status !== 'done') return null
-  return { id, kind, label, status, queries, seq, ...(resultSeq != null ? { resultSeq } : {}) }
+  return { id, kind, label, ...(text ? { text } : {}), status, queries, seq, ...(resultSeq != null ? { resultSeq } : {}) }
 }
 
 export function readMessageCopBlocks(messageId: string): MessageCopBlocksRef | null {
@@ -1341,6 +1388,7 @@ export type FileOpRef = {
   operation?: string
   displayKind?: string
   displayDescription?: string
+  displayText?: TimelineText
   displaySubject?: string
   displayDetail?: string
   diffAdded?: number
@@ -1355,6 +1403,7 @@ function isFileOpRef(v: unknown): v is FileOpRef {
   if (typeof o.label !== 'string') return false
   const s = o.status
   if (s !== 'running' && s !== 'success' && s !== 'failed') return false
+  if (o.displayText != null && !isTimelineText(o.displayText)) return false
   return true
 }
 
@@ -1583,6 +1632,7 @@ export type ThreadRunHandoffRef = {
   assistantTurn?: AssistantTurnUi | null
   sources: WebSource[]
   artifacts: ArtifactRef[]
+  resources: McpAppResource[]
   widgets: WidgetRef[]
   codeExecutions: CodeExecutionRef[]
   browserActions: BrowserActionRef[]
@@ -1614,6 +1664,17 @@ function isArtifactRef(value: unknown): value is ArtifactRef {
   if (typeof item.mime_type !== 'string') return false
   if (item.title != null && typeof item.title !== 'string') return false
   if (item.display != null && item.display !== 'inline' && item.display !== 'panel') return false
+  return true
+}
+
+function isMcpAppResource(value: unknown): value is McpAppResource {
+  if (!value || typeof value !== 'object') return false
+  const item = value as Record<string, unknown>
+  if (typeof item.key !== 'string' || item.key.trim() === '') return false
+  if (typeof item.uri !== 'string') return false
+  if (typeof item.filename !== 'string') return false
+  if (typeof item.mimeType !== 'string') return false
+  if (typeof item.size !== 'number') return false
   return true
 }
 
@@ -1670,6 +1731,7 @@ export function readThreadRunHandoff(threadId: string): ThreadRunHandoffRef | nu
     const assistantTurn = item.assistantTurn == null ? null : parseAssistantTurnData(item.assistantTurn)
     const sources = Array.isArray(item.sources) ? item.sources.filter(isWebSource) : []
     const artifacts = Array.isArray(item.artifacts) ? item.artifacts.filter(isArtifactRef) : []
+    const resources = Array.isArray(item.resources) ? item.resources.filter(isMcpAppResource) : []
     const widgets = Array.isArray(item.widgets) ? item.widgets.filter(isWidgetRef) : []
     const codeExecutions = Array.isArray(item.codeExecutions) ? item.codeExecutions.filter(isCodeExecutionRef) : []
     const browserActions = Array.isArray(item.browserActions) ? item.browserActions.filter(isBrowserActionRef) : []
@@ -1684,6 +1746,7 @@ export function readThreadRunHandoff(threadId: string): ThreadRunHandoffRef | nu
       assistantTurn,
       sources,
       artifacts,
+      resources,
       widgets,
       codeExecutions,
       browserActions,
@@ -1967,7 +2030,7 @@ export type ThreadRightPanelBrowserTab = {
 export type ThreadRightPanelResourceTab = {
   id: string
   title: string
-  resource: Exclude<ResourceRef, BrowserResourceRef>
+  resource: ArtifactResourceRef | LocalFileResourceRef | WorkspaceFileResourceRef
 }
 
 export type ThreadRightPanelState = {
@@ -2067,7 +2130,7 @@ function sanitizeWorkspaceFileResource(value: unknown): WorkspaceFileResourceRef
   }
 }
 
-function sanitizePersistentResource(value: unknown, workFolder?: string | null): Exclude<ResourceRef, BrowserResourceRef> | null {
+function sanitizePersistentResource(value: unknown, workFolder?: string | null): LocalFileResourceRef | ArtifactResourceRef | WorkspaceFileResourceRef | null {
   if (!value || typeof value !== 'object') return null
   const kind = (value as Record<string, unknown>).kind
   if (kind === 'local-file') return sanitizeLocalFileResource(value, workFolder)
@@ -2365,6 +2428,8 @@ export function migrateMessageMetadata(mapping: Array<{ old_id: string; new_id: 
     if (fileOps) writeMessageFileOps(new_id, fileOps)
     const webFetches = readMessageWebFetches(old_id)
     if (webFetches) writeMessageWebFetches(new_id, webFetches)
+    const resources = readMessageResources(old_id)
+    if (resources) writeMessageResources(new_id, resources)
   }
 }
 

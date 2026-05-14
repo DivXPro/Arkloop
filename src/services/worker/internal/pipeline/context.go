@@ -17,6 +17,7 @@ import (
 	"arkloop/services/worker/internal/personas"
 	"arkloop/services/worker/internal/routing"
 	"arkloop/services/worker/internal/subagentctl"
+	"arkloop/services/worker/internal/tooldiagnostics"
 	"arkloop/services/worker/internal/tools"
 
 	"github.com/google/uuid"
@@ -158,6 +159,8 @@ type RunContext struct {
 	AllowlistSet  map[string]struct{}
 	ToolDenylist  []string
 	ToolRegistry  *tools.Registry
+	// MCPToolNames records tools discovered from enabled MCP servers before persona narrowing.
+	MCPToolNames map[string]struct{}
 	// group_name -> provider_name
 	ActiveToolProviderByGroup map[string]string
 	// group_name -> active provider config
@@ -181,8 +184,9 @@ type RunContext struct {
 	ReadCapabilities ReadCapabilities
 
 	// -- ToolBuildMiddleware 写入 --
-	ToolExecutor *tools.DispatchingExecutor
-	FinalSpecs   []llm.ToolSpec
+	ToolExecutor         *tools.DispatchingExecutor
+	ToolExecutionTracker *tooldiagnostics.Tracker
+	FinalSpecs           []llm.ToolSpec
 
 	// -- ToolLoopDetectionMiddleware 写入 --
 	ToolLoopDetector *ToolLoopDetector
@@ -207,6 +211,7 @@ type RunContext struct {
 	AgentReasoningIterationsLimit int
 	ToolContinuationBudgetLimit   int
 	MaxParallelTasks              int
+	RunIdleTimeout                time.Duration
 	RunWallClockTimeout           time.Duration
 	PausedInputTimeout            time.Duration
 	IdleHeartbeatInterval         time.Duration

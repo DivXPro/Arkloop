@@ -382,9 +382,7 @@ func mustLinkDiscordIdentity(t *testing.T, env discordChannelsTestEnv, channelID
 
 func TestDiscordIngressDMFirstMessageEntersPendingBatch(t *testing.T) {
 	env := setupDiscordChannelsTestEnv(t, nil)
-	channel := createActiveDiscordChannelWithConfig(t, env, "bot-token", map[string]any{
-		"default_model": "openai^gpt-4.1-mini",
-	})
+	channel := createActiveDiscordChannelWithConfig(t, env, "bot-token", map[string]any{})
 	mustLinkDiscordIdentity(t, env, channel.ID, "u-1", "alice")
 
 	err := env.connector().HandleMessageCreate(

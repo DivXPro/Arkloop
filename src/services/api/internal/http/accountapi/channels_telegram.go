@@ -44,7 +44,6 @@ type telegramChannelConfig struct {
 	AllowedUserIDs        []string `json:"allowed_user_ids,omitempty"`
 	PrivateAllowedUserIDs []string `json:"private_allowed_user_ids"`
 	AllowedGroupIDs       []string `json:"allowed_group_ids"`
-	DefaultModel          string   `json:"default_model,omitempty"`
 	BotUsername           string   `json:"bot_username,omitempty"`
 	BotFirstName          string   `json:"bot_first_name,omitempty"`
 	TelegramBotUserID     int64    `json:"telegram_bot_user_id,omitempty"`
@@ -210,6 +209,7 @@ func normalizeChannelConfigJSON(channelType string, raw json.RawMessage) (json.R
 	}
 
 	if channelType != "telegram" {
+		delete(generic, "default_model")
 		normalized, err := json.Marshal(generic)
 		if err != nil {
 			return nil, nil, err
@@ -232,7 +232,6 @@ func normalizeChannelConfigJSON(channelType string, raw json.RawMessage) (json.R
 	}
 	cfg.AllowedGroupIDs = normalizedGroupIDs
 	cfg.AllowedUserIDs = nil
-	cfg.DefaultModel = strings.TrimSpace(cfg.DefaultModel)
 	cfg.BotUsername = strings.TrimSpace(strings.TrimPrefix(cfg.BotUsername, "@"))
 	cfg.TelegramReactionEmoji = strings.TrimSpace(cfg.TelegramReactionEmoji)
 	cfg.TriggerKeywords = normalizeTelegramTriggerKeywords(cfg.TriggerKeywords)
@@ -343,7 +342,7 @@ func shouldSendTelegramImmediateTyping(incoming *telegramIncomingMessage) bool {
 	if incoming == nil || !incoming.HasContent() {
 		return false
 	}
-	cmd, ok := telegramCommandBase(strings.TrimSpace(incoming.CommandText), "")
+	cmd, ok := slashCommandBase(strings.TrimSpace(incoming.CommandText), "")
 	if ok && strings.HasPrefix(cmd, "/heartbeat") {
 		return false
 	}
@@ -385,14 +384,7 @@ type telegramSelectorCandidate struct {
 	tags           []string
 }
 
-func validateTelegramChannelConfigSelectors(ctx context.Context, db data.Querier, accountID uuid.UUID, cfg telegramChannelConfig, allowUserScoped bool) error {
-	if err := validateTelegramModelSelector(ctx, db, accountID, cfg.DefaultModel, allowUserScoped); err != nil {
-		return fmt.Errorf("default_model %w", err)
-	}
-	return nil
-}
-
-func validateTelegramModelSelector(ctx context.Context, db data.Querier, accountID uuid.UUID, selector string, allowUserScoped bool) error {
+func validateModelSelector(ctx context.Context, db data.Querier, accountID uuid.UUID, selector string, allowUserScoped bool) error {
 	cleanedSelector := strings.TrimSpace(selector)
 	if cleanedSelector == "" {
 		return nil
@@ -400,7 +392,7 @@ func validateTelegramModelSelector(ctx context.Context, db data.Querier, account
 	if db == nil {
 		return fmt.Errorf("selector validation unavailable")
 	}
-	candidates, err := loadTelegramSelectorCandidates(ctx, db, accountID)
+	candidates, err := loadModelSelectorCandidates(ctx, db, accountID)
 	if err != nil {
 		return err
 	}
@@ -422,7 +414,7 @@ func resolveTelegramRouteIDBySelector(ctx context.Context, db data.Querier, acco
 	if db == nil {
 		return "", fmt.Errorf("selector resolution unavailable")
 	}
-	candidates, err := loadTelegramSelectorCandidates(ctx, db, accountID)
+	candidates, err := loadModelSelectorCandidates(ctx, db, accountID)
 	if err != nil {
 		return "", err
 	}
@@ -439,7 +431,7 @@ func resolveTelegramRouteIDBySelector(ctx context.Context, db data.Querier, acco
 	return strings.TrimSpace(selected.routeID.String()), nil
 }
 
-func loadTelegramSelectorCandidates(ctx context.Context, db data.Querier, accountID uuid.UUID) ([]telegramSelectorCandidate, error) {
+func loadModelSelectorCandidates(ctx context.Context, db data.Querier, accountID uuid.UUID) ([]telegramSelectorCandidate, error) {
 	rows, err := db.Query(ctx, `
 		SELECT r.id, c.id, c.name, c.owner_kind, r.model, r.priority, (r.account_id IS NOT NULL) AS account_scoped, r.tags
 		  FROM llm_routes r
@@ -572,7 +564,7 @@ func findTelegramCredentialIDByName(candidates []telegramSelectorCandidate, name
 	return platformMatch
 }
 
-func resolveTelegramByokEnabled(ctx context.Context, entSvc *entitlement.Service, accountID uuid.UUID) (bool, error) {
+func resolveByokEnabled(ctx context.Context, entSvc *entitlement.Service, accountID uuid.UUID) (bool, error) {
 	if entSvc == nil || accountID == uuid.Nil {
 		return true, nil
 	}
@@ -583,43 +575,69 @@ func resolveTelegramByokEnabled(ctx context.Context, entSvc *entitlement.Service
 	return val.Bool(), nil
 }
 
-func syncTelegramHeartbeatTrigger(
+func syncTelegramChannelHeartbeatTriggers(
+	ctx context.Context,
+	tx pgx.Tx,
+	accountID uuid.UUID,
+	channelID uuid.UUID,
+	personaID *uuid.UUID,
+	allowUserScoped bool,
+	personasRepo *data.PersonasRepository,
+) error {
+	rows, err := tx.Query(ctx, `
+		SELECT channel_identity_id, thread_id
+		  FROM scheduled_triggers
+		 WHERE channel_id = $1
+		   AND thread_id IS NOT NULL
+		   AND trigger_kind = 'heartbeat'`,
+		channelID,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var identityID uuid.UUID
+		var threadID uuid.UUID
+		if err := rows.Scan(&identityID, &threadID); err != nil {
+			return err
+		}
+		if err := syncTelegramThreadHeartbeatTrigger(ctx, tx, accountID, channelID, personaID, identityID, threadID, allowUserScoped, personasRepo); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+func syncTelegramThreadHeartbeatTrigger(
 	ctx context.Context,
 	tx pgx.Tx,
 	accountID uuid.UUID,
 	channelID uuid.UUID,
 	personaID *uuid.UUID,
 	identityID uuid.UUID,
-	fallbackModel string,
+	threadID uuid.UUID,
 	allowUserScoped bool,
 	personasRepo *data.PersonasRepository,
 ) error {
-	if tx == nil || personasRepo == nil {
-		return fmt.Errorf("heartbeat scheduling dependencies not configured")
+	if threadID == uuid.Nil {
+		return fmt.Errorf("heartbeat thread not configured")
 	}
-	var enabledInt int
-	var intervalMin int
-	var model string
-	if err := tx.QueryRow(
-		ctx,
-		`SELECT heartbeat_enabled, heartbeat_interval_minutes, heartbeat_model
-		   FROM channel_identities WHERE id = $1`,
-		identityID,
-	).Scan(&enabledInt, &intervalMin, &model); err != nil {
+	repo := data.ScheduledTriggersRepository{}
+	enabled, intervalMin, model, ok, err := getInboundThreadHeartbeatConfig(ctx, tx, threadID)
+	if err != nil {
 		return err
 	}
-	enabled := enabledInt != 0
-	repo := data.ScheduledTriggersRepository{}
-	if !enabled {
-		return repo.DeleteHeartbeat(ctx, tx, channelID, identityID)
+	if !ok || !enabled {
+		return repo.DeleteHeartbeatForThread(ctx, tx, threadID)
 	}
 	model = strings.TrimSpace(model)
-	if model == "" {
-		model = strings.TrimSpace(fallbackModel)
+	if model != "" {
+		if err := validateModelSelector(ctx, tx, accountID, model, allowUserScoped); err != nil {
+			return err
+		}
 	}
-	if err := validateTelegramModelSelector(ctx, tx, accountID, model, allowUserScoped); err != nil {
-		return err
-	}
+	resolveModelAtRuntime := model == ""
 	if personaID == nil || *personaID == uuid.Nil {
 		return fmt.Errorf("heartbeat persona not configured")
 	}
@@ -630,88 +648,12 @@ func syncTelegramHeartbeatTrigger(
 	if persona == nil {
 		return fmt.Errorf("heartbeat persona not found")
 	}
-	return repo.UpsertHeartbeat(
-		ctx,
-		tx,
-		accountID,
-		channelID,
-		identityID,
-		persona.PersonaKey,
-		model,
-		intervalMin,
-	)
-}
-
-func syncTelegramChannelHeartbeatTriggers(
-	ctx context.Context,
-	tx pgx.Tx,
-	accountID uuid.UUID,
-	channelID uuid.UUID,
-	personaID *uuid.UUID,
-	defaultModel string,
-	allowUserScoped bool,
-	personasRepo *data.PersonasRepository,
-) error {
-	identityIDs, err := loadTelegramChannelGroupIdentityIDs(ctx, tx, channelID)
-	if err != nil {
-		return err
-	}
-	for _, identityID := range identityIDs {
-		if err := syncTelegramHeartbeatTrigger(
-			ctx,
-			tx,
-			accountID,
-			channelID,
-			personaID,
-			identityID,
-			defaultModel,
-			allowUserScoped,
-			personasRepo,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
+	return repo.UpsertHeartbeatForThread(ctx, tx, accountID, channelID, identityID, threadID, persona.PersonaKey, model, resolveModelAtRuntime, intervalMin)
 }
 
 func deleteTelegramChannelHeartbeatTriggers(ctx context.Context, tx pgx.Tx, channelID uuid.UUID) error {
-	identityIDs, err := loadTelegramChannelGroupIdentityIDs(ctx, tx, channelID)
-	if err != nil {
-		return err
-	}
-	repo := data.ScheduledTriggersRepository{}
-	for _, identityID := range identityIDs {
-		if err := repo.DeleteHeartbeat(ctx, tx, channelID, identityID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func loadTelegramChannelGroupIdentityIDs(ctx context.Context, db data.Querier, channelID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := db.Query(ctx, `
-		SELECT DISTINCT ci.id
-		  FROM channel_group_threads cgt
-		  JOIN channel_identities ci
-		    ON ci.channel_type = 'telegram'
-		   AND ci.platform_subject_id = cgt.platform_chat_id
-		 WHERE cgt.channel_id = $1`,
-		channelID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []uuid.UUID
-	for rows.Next() {
-		var identityID uuid.UUID
-		if err := rows.Scan(&identityID); err != nil {
-			return nil, err
-		}
-		out = append(out, identityID)
-	}
-	return out, rows.Err()
+	_, err := tx.Exec(ctx, `DELETE FROM scheduled_triggers WHERE channel_id = $1 AND trigger_kind = 'heartbeat'`, channelID)
+	return err
 }
 
 func firstNonEmptySelector(values ...string) string {
@@ -1044,9 +986,10 @@ func isTelegramGroupLikeChatType(chatType string) bool {
 	}
 }
 
-// telegramCommandBase 返回命令名（不含 @bot），如 "/new"。
+// slashCommandBase 返回命令名（不含 @bot），如 "/new"。
 // 若命令带有 @target 且与 botUsername 不匹配，返回 ok=false（命令非发给本 bot）。
-func telegramCommandBase(text, botUsername string) (cmd string, ok bool) {
+func slashCommandBase(text, botUsername string) (cmd string, ok bool) {
+	text = strings.ReplaceAll(text, "／", "/")
 	text = strings.TrimSpace(text)
 	if !strings.HasPrefix(text, "/") {
 		return "", false
@@ -1172,6 +1115,9 @@ func (c telegramConnector) persistTelegramGroupPassiveMessageTx(
 	threadProjectID := derefUUID(persona.ProjectID)
 	threadID, err := c.resolveTelegramThreadID(ctx, tx, ch, persona.ID, threadProjectID, identity, incoming)
 	if err != nil {
+		return uuid.Nil, "", err
+	}
+	if err := ensureInboundThreadChatModel(ctx, tx, ch.AccountID, threadID, extractChannelDefaultModel(ch)); err != nil {
 		return uuid.Nil, "", err
 	}
 	timeCtx := c.resolveInboundTimeContext(ctx, ch, identity, incoming)
@@ -1626,14 +1572,11 @@ func (c telegramConnector) notifyActiveRunInput(ctx context.Context, runID uuid.
 	c.inputNotify(ctx, runID)
 }
 
-func buildChannelRunStartedData(personaRef string, defaultModel string, reasoningMode string, channelDelivery map[string]any) map[string]any {
+func buildChannelRunStartedData(personaRef string, reasoningMode string, channelDelivery map[string]any) map[string]any {
 	dataJSON := map[string]any{
 		"persona_id":          personaRef,
 		"continuation_source": "none",
 		"continuation_loop":   false,
-	}
-	if model := strings.TrimSpace(defaultModel); model != "" {
-		dataJSON["model"] = model
 	}
 	if mode := strings.TrimSpace(reasoningMode); mode != "" {
 		dataJSON["reasoning_mode"] = mode
@@ -1646,7 +1589,6 @@ func buildChannelRunStartedData(personaRef string, defaultModel string, reasonin
 
 func buildTelegramRunStartedData(
 	personaRef string,
-	defaultModel string,
 	reasoningMode string,
 	channelID uuid.UUID,
 	channelIdentityID uuid.UUID,
@@ -1654,7 +1596,6 @@ func buildTelegramRunStartedData(
 ) map[string]any {
 	return buildChannelRunStartedData(
 		personaRef,
-		defaultModel,
 		reasoningMode,
 		buildTelegramChannelDeliveryPayload(channelID, channelIdentityID, incoming),
 	)
@@ -1665,33 +1606,9 @@ func buildTelegramChannelDeliveryPayload(
 	channelIdentityID uuid.UUID,
 	incoming telegramIncomingMessage,
 ) map[string]any {
-	payload := map[string]any{
-		"channel_id":   channelID.String(),
-		"channel_type": "telegram",
-		"conversation_ref": map[string]any{
-			"target": incoming.PlatformChatID,
-		},
-		"inbound_message_ref": map[string]any{
-			"message_id": incoming.PlatformMsgID,
-		},
-		"trigger_message_ref": map[string]any{
-			"message_id": incoming.PlatformMsgID,
-		},
-		"platform_chat_id":           incoming.PlatformChatID,
-		"platform_message_id":        incoming.PlatformMsgID,
-		"sender_channel_identity_id": channelIdentityID.String(),
-		"conversation_type":          incoming.ChatType,
-		"mentions_bot":               incoming.MentionsBot,
-		"is_reply_to_bot":            incoming.IsReplyToBot,
-	}
-	if incoming.ReplyToMsgID != nil && strings.TrimSpace(*incoming.ReplyToMsgID) != "" {
-		payload["inbound_reply_to_message_id"] = strings.TrimSpace(*incoming.ReplyToMsgID)
-	}
-	if incoming.MessageThreadID != nil && strings.TrimSpace(*incoming.MessageThreadID) != "" {
-		payload["conversation_ref"].(map[string]any)["thread_id"] = strings.TrimSpace(*incoming.MessageThreadID)
-		payload["message_thread_id"] = strings.TrimSpace(*incoming.MessageThreadID)
-	}
-	return payload
+	incoming.ChannelID = channelID
+	incoming.ChannelType = "telegram"
+	return BuildChannelDeliveryPayload(incoming, channelIdentityID)
 }
 
 func parseTelegramWebhookChannelID(path string) (uuid.UUID, bool) {
@@ -1773,275 +1690,6 @@ func trimOptional(value *string) string {
 	return strings.TrimSpace(*value)
 }
 
-func handleTelegramCommand(
-	ctx context.Context,
-	tx pgx.Tx,
-	channel *data.Channel,
-	identity data.ChannelIdentity,
-	text string,
-	platformThreadID string,
-	accountID uuid.UUID,
-	entSvc *entitlement.Service,
-	channelBindCodesRepo *data.ChannelBindCodesRepository,
-	channelIdentitiesRepo *data.ChannelIdentitiesRepository,
-	channelIdentityLinksRepo *data.ChannelIdentityLinksRepository,
-	channelDMThreadsRepo *data.ChannelDMThreadsRepository,
-	threadRepo *data.ThreadRepository,
-	runEventRepo *data.RunEventRepository,
-	pool data.DB,
-	personasRepo *data.PersonasRepository,
-	channelsRepo *data.ChannelsRepository,
-) (bool, string, *telegrambot.InlineKeyboardMarkup, error) {
-	if !strings.HasPrefix(text, "/") {
-		return false, "", nil, nil
-	}
-	parts := strings.Fields(text)
-	if len(parts) == 0 {
-		return false, "", nil, nil
-	}
-	command := strings.TrimSpace(parts[0])
-	switch command {
-	case "/help":
-		return true, "/start — 查看连接状态\n/bind <code> — 绑定你的账号\n/new — 开启新会话\n/reset — 重置会话\n/stop — 停止当前任务\n/status — 查看当前状态\n/model [name] — View or switch model\n/think [level] — View or set thinking intensity\n/models — 列出所有可用模型\n/persona — 切换当前 persona\n/help — 显示此帮助", nil, nil
-	case "/start":
-		if len(parts) > 1 && strings.HasPrefix(parts[1], "bind_") {
-			replyText, err := bindTelegramIdentity(ctx, tx, channel, identity, strings.TrimPrefix(parts[1], "bind_"), channelBindCodesRepo, channelIdentitiesRepo, channelIdentityLinksRepo, channelDMThreadsRepo, threadRepo)
-			return true, replyText, nil, err
-		}
-		return true, "已连接 Arkloop\n\n使用 /bind <code> 绑定账号\n私聊直接发消息开始对话，/new 开启新会话\n群内 @bot 触发对话，管理员可用 /new 重置会话", nil, nil
-	case "/bind":
-		if len(parts) < 2 {
-			return true, "用法：/bind <code>", nil, nil
-		}
-		replyText, err := bindTelegramIdentity(ctx, tx, channel, identity, parts[1], channelBindCodesRepo, channelIdentitiesRepo, channelIdentityLinksRepo, channelDMThreadsRepo, threadRepo)
-		return true, replyText, nil, err
-	case "/new":
-		if channel == nil || channel.PersonaID == nil || *channel.PersonaID == uuid.Nil {
-			return true, "当前会话未配置 persona。", nil, nil
-		}
-		if err := channelDMThreadsRepo.WithTx(tx).DeleteByBinding(ctx, channel.ID, identity.ID, *channel.PersonaID, platformThreadID); err != nil {
-			return true, "", nil, err
-		}
-		return true, "已开启新会话。", nil, nil
-	case "/stop":
-		if channel == nil || channel.PersonaID == nil || *channel.PersonaID == uuid.Nil {
-			return true, "当前没有运行中的任务。", nil, nil
-		}
-		dmThread, err := channelDMThreadsRepo.GetByBinding(ctx, channel.ID, identity.ID, *channel.PersonaID, platformThreadID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		if dmThread == nil {
-			return true, "当前没有运行中的任务。", nil, nil
-		}
-		activeRun, err := runEventRepo.GetActiveRootRunForThread(ctx, dmThread.ThreadID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		if activeRun == nil {
-			return true, "当前没有运行中的任务。", nil, nil
-		}
-		if _, err := runEventRepo.RequestCancel(ctx, activeRun.ID, identity.UserID, "", 0, nil); err != nil {
-			return true, "", nil, err
-		}
-		_, _ = pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, activeRun.ID.String())
-		return true, "已请求停止当前任务。", nil, nil
-	case "/reset":
-		if channel == nil || channel.PersonaID == nil || *channel.PersonaID == uuid.Nil {
-			return true, "当前会话未配置 persona。", nil, nil
-		}
-		if err := channelDMThreadsRepo.WithTx(tx).DeleteByBinding(ctx, channel.ID, identity.ID, *channel.PersonaID, platformThreadID); err != nil {
-			return true, "", nil, err
-		}
-		return true, "已重置会话。", nil, nil
-	case "/status":
-		preferredModel, reasoningMode, err := channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, identity.ID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		modelDisplay := "跟随频道"
-		if strings.TrimSpace(preferredModel) != "" {
-			modelDisplay = preferredModel
-		}
-		thinkDisplay := reasoningMode
-		if thinkDisplay == "" {
-			thinkDisplay = "off"
-		}
-		var sb strings.Builder
-		_, _ = fmt.Fprintf(&sb, "模型：%s\n思考：%s", modelDisplay, thinkDisplay)
-		if channel != nil && channel.PersonaID != nil && *channel.PersonaID != uuid.Nil {
-			dmThread, _ := channelDMThreadsRepo.GetByBinding(ctx, channel.ID, identity.ID, *channel.PersonaID, platformThreadID)
-			if dmThread != nil {
-				activeRun, _ := runEventRepo.GetActiveRootRunForThread(ctx, dmThread.ThreadID)
-				if activeRun != nil {
-					sb.WriteString("\n状态：运行中")
-				} else {
-					sb.WriteString("\n状态：空闲")
-				}
-			}
-		}
-		return true, sb.String(), nil, nil
-	case "/models":
-		candidates, err := loadTelegramSelectorCandidates(ctx, tx, accountID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		allowUserScoped, err := resolveTelegramByokEnabled(ctx, entSvc, accountID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		preferredModel, _, _ := channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, identity.ID)
-		var rows [][]telegrambot.InlineKeyboardButton
-		for _, c := range candidates {
-			if !c.accountScoped && !allowUserScoped {
-				continue
-			}
-			label := c.model
-			if strings.EqualFold(strings.TrimSpace(c.model), strings.TrimSpace(preferredModel)) {
-				label = c.model + " ✓"
-			}
-			rows = append(rows, []telegrambot.InlineKeyboardButton{{
-				Text:         label,
-				CallbackData: "model:" + c.model,
-			}})
-		}
-		if len(rows) == 0 {
-			return true, "暂无可用模型。", nil, nil
-		}
-		rows = append(rows, []telegrambot.InlineKeyboardButton{{Text: "✕", CallbackData: "dismiss"}})
-		return true, "Choose model.", &telegrambot.InlineKeyboardMarkup{InlineKeyboard: rows}, nil
-	case "/persona":
-		if channel == nil {
-			return true, "无法获取频道信息。", nil, nil
-		}
-		if personasRepo == nil || channelsRepo == nil {
-			return true, "persona 功能不可用。", nil, nil
-		}
-		var projectID uuid.UUID
-		if channel.PersonaID != nil && *channel.PersonaID != uuid.Nil {
-			currentPersona, err := personasRepo.GetByIDForAccount(ctx, accountID, *channel.PersonaID)
-			if err == nil && currentPersona != nil && currentPersona.ProjectID != nil {
-				projectID = *currentPersona.ProjectID
-			}
-		}
-		if projectID == uuid.Nil {
-			return true, "当前会话未配置 persona。", nil, nil
-		}
-		personas, err := personasRepo.ListActiveByProject(ctx, projectID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		var rows [][]telegrambot.InlineKeyboardButton
-		for _, p := range personas {
-			if !p.UserSelectable {
-				continue
-			}
-			label := p.DisplayName
-			if channel.PersonaID != nil && p.ID == *channel.PersonaID {
-				label = p.DisplayName + " ✓"
-			}
-			rows = append(rows, []telegrambot.InlineKeyboardButton{{
-				Text:         label,
-				CallbackData: "persona:" + p.ID.String(),
-			}})
-		}
-		if len(rows) == 0 {
-			return true, "没有可切换的 persona。", nil, nil
-		}
-		header := "Choose persona."
-		if channel.PersonaID != nil {
-			current, _ := personasRepo.GetByIDForAccount(ctx, accountID, *channel.PersonaID)
-			if current != nil {
-				header = "Choose persona.\nCurrent: " + current.DisplayName
-			}
-		}
-		rows = append(rows, []telegrambot.InlineKeyboardButton{{Text: "✕", CallbackData: "dismiss"}})
-		return true, header, &telegrambot.InlineKeyboardMarkup{InlineKeyboard: rows}, nil
-	case "/model":
-		allowUserScoped, err := resolveTelegramByokEnabled(ctx, entSvc, accountID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		preferredModel, _, err := channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, identity.ID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		if len(parts) < 2 {
-			candidates, err := loadTelegramSelectorCandidates(ctx, tx, accountID)
-			if err != nil {
-				return true, "", nil, err
-			}
-			var rows [][]telegrambot.InlineKeyboardButton
-			for _, c := range candidates {
-				if !c.accountScoped && !allowUserScoped {
-					continue
-				}
-				label := c.model
-				if strings.EqualFold(strings.TrimSpace(c.model), strings.TrimSpace(preferredModel)) {
-					label = c.model + " ✓"
-				}
-				rows = append(rows, []telegrambot.InlineKeyboardButton{{
-					Text:         label,
-					CallbackData: "model:" + c.model,
-				}})
-			}
-			rows = append(rows, []telegrambot.InlineKeyboardButton{{Text: "✕", CallbackData: "dismiss"}})
-			header := "Choose model.\nCurrent: follow channel default"
-			if strings.TrimSpace(preferredModel) != "" {
-				header = "Choose model.\nCurrent: " + preferredModel
-			}
-			var markup *telegrambot.InlineKeyboardMarkup
-			if len(rows) > 0 {
-				rows = append(rows, []telegrambot.InlineKeyboardButton{{Text: "✕", CallbackData: "dismiss"}})
-				markup = &telegrambot.InlineKeyboardMarkup{InlineKeyboard: rows}
-			}
-			return true, header, markup, nil
-		}
-		newModel := strings.TrimSpace(parts[1])
-		if err := validateTelegramModelSelector(ctx, tx, accountID, newModel, allowUserScoped); err != nil {
-			return true, fmt.Sprintf("模型选择器无效：%s", newModel), nil, nil
-		}
-		_, reasoningMode, err := channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, identity.ID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		if err := channelIdentitiesRepo.WithTx(tx).UpdatePreferenceConfig(ctx, identity.ID, newModel, reasoningMode); err != nil {
-			return true, "", nil, err
-		}
-		return true, "model → " + newModel, nil, nil
-	case "/think":
-		_, reasoningMode, err := channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, identity.ID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		if len(parts) < 2 {
-			display := reasoningMode
-			if display == "" {
-				display = "off"
-			}
-			markup := buildThinkKeyboard(display)
-			header := fmt.Sprintf("Choose level for /think.\nCurrent: %s\nOptions: off, minimal, low, medium, high, max.", display)
-			return true, header, markup, nil
-		}
-		newMode := strings.TrimSpace(parts[1])
-		validModes := map[string]bool{"off": true, "minimal": true, "low": true, "medium": true, "high": true, "max": true}
-		if !validModes[newMode] {
-			return true, "可用档位：off、minimal、low、medium、high、max", nil, nil
-		}
-		preferredModel, _, err := channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, identity.ID)
-		if err != nil {
-			return true, "", nil, err
-		}
-		if err := channelIdentitiesRepo.WithTx(tx).UpdatePreferenceConfig(ctx, identity.ID, preferredModel, newMode); err != nil {
-			return true, "", nil, err
-		}
-		return true, "think → " + newMode, nil, nil
-	default:
-		return false, "", nil, nil
-	}
-}
-
-// handleTelegramHeartbeatCommand 处理群内 /heartbeat 命令。
 // 支持：/heartbeat、/heartbeat on、/heartbeat off、/heartbeat interval N、/heartbeat model NAME
 func handleTelegramHeartbeatCommand(
 	ctx context.Context,
@@ -2049,7 +1697,7 @@ func handleTelegramHeartbeatCommand(
 	channelID uuid.UUID,
 	accountID uuid.UUID,
 	personaID *uuid.UUID,
-	defaultModel string,
+	threadID uuid.UUID,
 	identity data.ChannelIdentity,
 	rawText string,
 	channelIdentitiesRepo *data.ChannelIdentitiesRepository,
@@ -2057,14 +1705,22 @@ func handleTelegramHeartbeatCommand(
 	entSvc *entitlement.Service,
 ) (string, error) {
 	parts := strings.Fields(rawText)
-	allowUserScoped, err := resolveTelegramByokEnabled(ctx, entSvc, accountID)
+	allowUserScoped, err := resolveByokEnabled(ctx, entSvc, accountID)
 	if err != nil {
 		return "", err
 	}
+	if threadID == uuid.Nil {
+		return "当前会话未配置 persona。", nil
+	}
 
-	enabled, intervalMin, model, err := channelIdentitiesRepo.WithTx(tx).GetHeartbeatConfig(ctx, identity.ID)
+	enabled, intervalMin, model, ok, err := getInboundThreadHeartbeatConfig(ctx, tx, threadID)
 	if err != nil {
 		return "", err
+	}
+	if !ok {
+		enabled = false
+		intervalMin = 0
+		model = ""
 	}
 
 	if len(parts) == 1 {
@@ -2085,21 +1741,23 @@ func handleTelegramHeartbeatCommand(
 		if intervalMin <= 0 {
 			intervalMin = runkind.DefaultHeartbeatIntervalMinutes
 		}
-		if err := validateTelegramModelSelector(ctx, tx, accountID, firstNonEmptySelector(model, defaultModel), allowUserScoped); err != nil {
-			return "当前心跳模型无效，请先重新设置 /heartbeat model <模型选择器>。", nil
+		if strings.TrimSpace(model) != "" {
+			if err := validateModelSelector(ctx, tx, accountID, model, allowUserScoped); err != nil {
+				return "当前心跳模型无效，请先重新设置 /heartbeat model <模型选择器>。", nil
+			}
 		}
-		if err := channelIdentitiesRepo.WithTx(tx).UpdateHeartbeatConfig(ctx, identity.ID, true, intervalMin, model); err != nil {
+		if err := updateInboundThreadHeartbeatConfig(ctx, tx, threadID, true, intervalMin, model); err != nil {
 			return "", err
 		}
-		if err := syncTelegramHeartbeatTrigger(ctx, tx, accountID, channelID, personaID, identity.ID, defaultModel, allowUserScoped, personasRepo); err != nil {
+		if err := syncTelegramThreadHeartbeatTrigger(ctx, tx, accountID, channelID, personaID, identity.ID, threadID, allowUserScoped, personasRepo); err != nil {
 			return "", err
 		}
 		return "心跳已开启。", nil
 	case "off":
-		if err := channelIdentitiesRepo.WithTx(tx).UpdateHeartbeatConfig(ctx, identity.ID, false, intervalMin, model); err != nil {
+		if err := updateInboundThreadHeartbeatConfig(ctx, tx, threadID, false, intervalMin, model); err != nil {
 			return "", err
 		}
-		if err := syncTelegramHeartbeatTrigger(ctx, tx, accountID, channelID, personaID, identity.ID, defaultModel, allowUserScoped, personasRepo); err != nil {
+		if err := syncTelegramThreadHeartbeatTrigger(ctx, tx, accountID, channelID, personaID, identity.ID, threadID, allowUserScoped, personasRepo); err != nil {
 			return "", err
 		}
 		return "心跳已关闭。", nil
@@ -2111,13 +1769,15 @@ func handleTelegramHeartbeatCommand(
 		if parseErr != nil || n <= 0 {
 			return "最长间隔必须是正整数（分钟）。", nil
 		}
-		if err := validateTelegramModelSelector(ctx, tx, accountID, firstNonEmptySelector(model, defaultModel), allowUserScoped); err != nil {
-			return "当前心跳模型无效，请先重新设置 /heartbeat model <模型选择器>。", nil
+		if strings.TrimSpace(model) != "" {
+			if err := validateModelSelector(ctx, tx, accountID, model, allowUserScoped); err != nil {
+				return "当前心跳模型无效，请先重新设置 /heartbeat model <模型选择器>。", nil
+			}
 		}
-		if err := channelIdentitiesRepo.WithTx(tx).UpdateHeartbeatConfig(ctx, identity.ID, enabled, n, model); err != nil {
+		if err := updateInboundThreadHeartbeatConfig(ctx, tx, threadID, enabled, n, model); err != nil {
 			return "", err
 		}
-		if err := syncTelegramHeartbeatTrigger(ctx, tx, accountID, channelID, personaID, identity.ID, defaultModel, allowUserScoped, personasRepo); err != nil {
+		if err := syncTelegramThreadHeartbeatTrigger(ctx, tx, accountID, channelID, personaID, identity.ID, threadID, allowUserScoped, personasRepo); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("心跳最长间隔已设为 %d 分钟。", n), nil
@@ -2126,13 +1786,13 @@ func handleTelegramHeartbeatCommand(
 		if len(parts) >= 3 {
 			newModel = strings.TrimSpace(parts[2])
 		}
-		if err := validateTelegramModelSelector(ctx, tx, accountID, newModel, allowUserScoped); err != nil {
+		if err := validateModelSelector(ctx, tx, accountID, newModel, allowUserScoped); err != nil {
 			return fmt.Sprintf("模型选择器无效：%s。", strings.TrimSpace(newModel)), nil
 		}
-		if err := channelIdentitiesRepo.WithTx(tx).UpdateHeartbeatConfig(ctx, identity.ID, enabled, intervalMin, newModel); err != nil {
+		if err := updateInboundThreadHeartbeatConfig(ctx, tx, threadID, enabled, intervalMin, newModel); err != nil {
 			return "", err
 		}
-		if err := syncTelegramHeartbeatTrigger(ctx, tx, accountID, channelID, personaID, identity.ID, defaultModel, allowUserScoped, personasRepo); err != nil {
+		if err := syncTelegramThreadHeartbeatTrigger(ctx, tx, accountID, channelID, personaID, identity.ID, threadID, allowUserScoped, personasRepo); err != nil {
 			return "", err
 		}
 		if newModel == "" {
@@ -2142,21 +1802,6 @@ func handleTelegramHeartbeatCommand(
 	default:
 		return "可用子命令：on、off、interval <分钟>、model <模型名>", nil
 	}
-}
-
-func bindTelegramIdentity(
-	ctx context.Context,
-	tx pgx.Tx,
-	channel *data.Channel,
-	identity data.ChannelIdentity,
-	code string,
-	channelBindCodesRepo *data.ChannelBindCodesRepository,
-	channelIdentitiesRepo *data.ChannelIdentitiesRepository,
-	channelIdentityLinksRepo *data.ChannelIdentityLinksRepository,
-	channelDMThreadsRepo *data.ChannelDMThreadsRepository,
-	threadRepo *data.ThreadRepository,
-) (string, error) {
-	return bindChannelIdentity(ctx, tx, channel, identity, code, "Telegram", channelBindCodesRepo, channelIdentitiesRepo, channelIdentityLinksRepo, channelDMThreadsRepo, threadRepo)
 }
 
 func bindChannelIdentity(
@@ -2407,101 +2052,138 @@ func (c telegramConnector) HandleUpdateForPoll(
 	return nil
 }
 
-// buildThinkKeyboard 构建 /think 按钮键盘，当前档位标 ✓。
-func buildThinkKeyboard(currentMode string) *telegrambot.InlineKeyboardMarkup {
-	modes := []string{"off", "minimal", "low", "medium", "high", "max"}
+// buildPreferenceKeyboard converts a PreferenceResult into a Telegram inline keyboard.
+// Used by both DM and group command handlers to render /model and /think picks.
+func buildPreferenceKeyboard(pref *PreferenceResult) *telegrambot.InlineKeyboardMarkup {
+	if pref == nil {
+		return nil
+	}
 	var rows [][]telegrambot.InlineKeyboardButton
-	var row []telegrambot.InlineKeyboardButton
-	for _, mode := range modes {
-		label := mode
-		if mode == currentMode {
-			label = mode + " ✓"
-		}
-		row = append(row, telegrambot.InlineKeyboardButton{
-			Text:         label,
-			CallbackData: "think:" + mode,
-		})
-		if len(row) == 2 {
-			rows = append(rows, row)
-			row = nil
+
+	// /model keyboard
+	if len(pref.AvailableModels) > 0 {
+		for _, m := range pref.AvailableModels {
+			label := m.Model
+			if m.IsSelected {
+				label = m.Model + " ✓"
+			}
+			rows = append(rows, []telegrambot.InlineKeyboardButton{{
+				Text:         label,
+				CallbackData: "model:" + m.Model,
+			}})
 		}
 	}
-	if len(row) > 0 {
-		rows = append(rows, row)
+
+	// /think keyboard
+	if pref.ThinkingMode != "" {
+		modes := []string{"off", "minimal", "low", "medium", "high", "max"}
+		for _, mode := range modes {
+			label := mode
+			if mode == pref.ThinkingMode {
+				label = mode + " ✓"
+			}
+			rows = append(rows, []telegrambot.InlineKeyboardButton{{
+				Text:         label,
+				CallbackData: "think:" + mode,
+			}})
+		}
+	}
+
+	if len(rows) == 0 {
+		return nil
 	}
 	rows = append(rows, []telegrambot.InlineKeyboardButton{{Text: "✕", CallbackData: "dismiss"}})
 	return &telegrambot.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
 
-// handleTelegramPreferenceCommand 处理 /model 和 /think 偏好命令（群聊和私聊均可用）。
-func handleTelegramPreferenceCommand(
+func buildPersonaKeyboard(result *PersonaResult) *telegrambot.InlineKeyboardMarkup {
+	if result == nil {
+		return nil
+	}
+	var rows [][]telegrambot.InlineKeyboardButton
+	for _, p := range result.Personas {
+		label := p.DisplayName
+		if p.IsSelected {
+			label = p.DisplayName + " ✓"
+		}
+		rows = append(rows, []telegrambot.InlineKeyboardButton{{
+			Text:         label,
+			CallbackData: "persona:" + p.ID,
+		}})
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	rows = append(rows, []telegrambot.InlineKeyboardButton{{Text: "✕", CallbackData: "dismiss"}})
+	return &telegrambot.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+// handlePreferenceCommand 处理 /model 和 /think 偏好命令（群聊和私聊均可用）。
+// 返回 PreferenceResult 而非通道特定类型，由调用方负责转换为通道特定 UI。
+func handlePreferenceCommand(
 	ctx context.Context,
 	tx pgx.Tx,
 	accountID uuid.UUID,
-	identity data.ChannelIdentity,
+	threadID uuid.UUID,
 	rawText string,
-	channelIdentitiesRepo *data.ChannelIdentitiesRepository,
 	entSvc *entitlement.Service,
-) (string, *telegrambot.InlineKeyboardMarkup, error) {
+) (string, *PreferenceResult, error) {
 	parts := strings.Fields(rawText)
 	if len(parts) == 0 {
 		return "", nil, nil
 	}
-	cmd, _ := telegramCommandBase(rawText, "")
+	cmd, _ := slashCommandBase(rawText, "")
 	switch cmd {
 	case "/model":
-		allowUserScoped, err := resolveTelegramByokEnabled(ctx, entSvc, accountID)
+		allowUserScoped, err := resolveByokEnabled(ctx, entSvc, accountID)
 		if err != nil {
 			return "", nil, err
 		}
-		preferredModel, _, err := channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, identity.ID)
+		if threadID == uuid.Nil {
+			return "当前会话未配置 persona。", nil, nil
+		}
+		preferredModel, reasoningMode, _, err := getInboundThreadModelPreference(ctx, tx, threadID)
 		if err != nil {
 			return "", nil, err
 		}
 		if len(parts) < 2 {
-			candidates, err := loadTelegramSelectorCandidates(ctx, tx, accountID)
+			candidates, err := loadModelSelectorCandidates(ctx, tx, accountID)
 			if err != nil {
 				return "", nil, err
 			}
-			var rows [][]telegrambot.InlineKeyboardButton
+			var modelOpts []ModelOption
 			for _, c := range candidates {
 				if !c.accountScoped && !allowUserScoped {
 					continue
 				}
-				label := c.model
-				if strings.EqualFold(strings.TrimSpace(c.model), strings.TrimSpace(preferredModel)) {
-					label = c.model + " ✓"
-				}
-				rows = append(rows, []telegrambot.InlineKeyboardButton{{
-					Text:         label,
-					CallbackData: "model:" + c.model,
-				}})
+				modelOpts = append(modelOpts, ModelOption{
+					Model:      c.model,
+					IsSelected: strings.EqualFold(strings.TrimSpace(c.model), strings.TrimSpace(preferredModel)),
+				})
+			}
+			prefResult := &PreferenceResult{
+				AvailableModels: modelOpts,
+				AllowUserScoped: allowUserScoped,
 			}
 			header := "Choose model.\nCurrent: follow channel default"
 			if strings.TrimSpace(preferredModel) != "" {
 				header = "Choose model.\nCurrent: " + preferredModel
 			}
-			var markup *telegrambot.InlineKeyboardMarkup
-			if len(rows) > 0 {
-				rows = append(rows, []telegrambot.InlineKeyboardButton{{Text: "✕", CallbackData: "dismiss"}})
-				markup = &telegrambot.InlineKeyboardMarkup{InlineKeyboard: rows}
-			}
-			return header, markup, nil
+			return header, prefResult, nil
 		}
 		newModel := strings.TrimSpace(parts[1])
-		if err := validateTelegramModelSelector(ctx, tx, accountID, newModel, allowUserScoped); err != nil {
+		if err := validateModelSelector(ctx, tx, accountID, newModel, allowUserScoped); err != nil {
 			return fmt.Sprintf("模型选择器无效：%s", newModel), nil, nil
 		}
-		_, reasoningMode, err := channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, identity.ID)
-		if err != nil {
-			return "", nil, err
-		}
-		if err := channelIdentitiesRepo.WithTx(tx).UpdatePreferenceConfig(ctx, identity.ID, newModel, reasoningMode); err != nil {
+		if err := updateInboundThreadModelPreference(ctx, tx, threadID, newModel, reasoningMode); err != nil {
 			return "", nil, err
 		}
 		return "model → " + newModel, nil, nil
 	case "/think":
-		_, reasoningMode, err := channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, identity.ID)
+		if threadID == uuid.Nil {
+			return "当前会话未配置 persona。", nil, nil
+		}
+		preferredModel, reasoningMode, _, err := getInboundThreadModelPreference(ctx, tx, threadID)
 		if err != nil {
 			return "", nil, err
 		}
@@ -2510,20 +2192,16 @@ func handleTelegramPreferenceCommand(
 			if display == "" {
 				display = "off"
 			}
-			markup := buildThinkKeyboard(display)
+			prefResult := &PreferenceResult{ThinkingMode: display}
 			header := fmt.Sprintf("Choose level for /think.\nCurrent: %s\nOptions: off, minimal, low, medium, high, max.", display)
-			return header, markup, nil
+			return header, prefResult, nil
 		}
 		newMode := strings.TrimSpace(parts[1])
 		validModes := map[string]bool{"off": true, "minimal": true, "low": true, "medium": true, "high": true, "max": true}
 		if !validModes[newMode] {
 			return "可用档位：off、minimal、low、medium、high、max", nil, nil
 		}
-		preferredModel, _, err := channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, identity.ID)
-		if err != nil {
-			return "", nil, err
-		}
-		if err := channelIdentitiesRepo.WithTx(tx).UpdatePreferenceConfig(ctx, identity.ID, preferredModel, newMode); err != nil {
+		if err := updateInboundThreadModelPreference(ctx, tx, threadID, preferredModel, newMode); err != nil {
 			return "", nil, err
 		}
 		return "think → " + newMode, nil, nil
@@ -2634,22 +2312,69 @@ func (c telegramConnector) handleTelegramCallbackQuery(
 		return nil
 	}
 
-	if thinkLevel != "" {
-		preferredModel, _, err := c.channelIdentitiesRepo.GetPreferenceConfig(ctx, identity.ID)
+	tx, err := c.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	threadID := uuid.Nil
+	if ch.PersonaID != nil && *ch.PersonaID != uuid.Nil {
+		persona, err := c.personasRepo.WithTx(tx).GetByIDForAccount(ctx, ch.AccountID, *ch.PersonaID)
 		if err != nil {
 			return err
 		}
-		if err := c.channelIdentitiesRepo.UpdatePreferenceConfig(ctx, identity.ID, preferredModel, thinkLevel); err != nil {
+		if persona != nil {
+			projectID := derefUUID(persona.ProjectID)
+			if projectID == uuid.Nil {
+				if ownerUserID := channelOwnerUserID(ch); ownerUserID != nil && *ownerUserID != uuid.Nil {
+					if pid, err := c.personasRepo.WithTx(tx).GetOrCreateDefaultProjectIDByOwner(ctx, ch.AccountID, *ownerUserID); err == nil {
+						projectID = pid
+					}
+				}
+			}
+			if projectID != uuid.Nil {
+				incoming := telegramIncomingMessage{
+					ChannelID:        ch.ID,
+					ChannelType:      ch.ChannelType,
+					PlatformChatID:   fmt.Sprintf("%d", cb.Message.Chat.ID),
+					PlatformUserID:   fmt.Sprintf("%d", cb.From.ID),
+					ChatType:         strings.TrimSpace(cb.Message.Chat.Type),
+					ConversationType: strings.TrimSpace(cb.Message.Chat.Type),
+				}
+				if cb.Message.MessageThreadID != nil {
+					thread := strconv.FormatInt(*cb.Message.MessageThreadID, 10)
+					incoming.MessageThreadID = &thread
+				}
+				resolvedThreadID, err := c.resolveTelegramThreadID(ctx, tx, ch, *ch.PersonaID, projectID, *identity, incoming)
+				if err != nil {
+					return err
+				}
+				threadID = resolvedThreadID
+			}
+		}
+	}
+	if threadID == uuid.Nil {
+		return nil
+	}
+	if thinkLevel != "" {
+		preferredModel, _, _, err := getInboundThreadModelPreference(ctx, tx, threadID)
+		if err != nil {
+			return err
+		}
+		if err := updateInboundThreadModelPreference(ctx, tx, threadID, preferredModel, thinkLevel); err != nil {
 			return err
 		}
 	} else if modelName != "" {
-		_, reasoningMode, err := c.channelIdentitiesRepo.GetPreferenceConfig(ctx, identity.ID)
+		_, reasoningMode, _, err := getInboundThreadModelPreference(ctx, tx, threadID)
 		if err != nil {
 			return err
 		}
-		if err := c.channelIdentitiesRepo.UpdatePreferenceConfig(ctx, identity.ID, modelName, reasoningMode); err != nil {
+		if err := updateInboundThreadModelPreference(ctx, tx, threadID, modelName, reasoningMode); err != nil {
 			return err
 		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
 
 	// 编辑原消息：替换为确认文本，移除按钮。

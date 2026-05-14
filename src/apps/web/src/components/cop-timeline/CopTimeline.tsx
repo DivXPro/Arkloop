@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { memo, useState, useEffect, useRef } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ChevronRight } from 'lucide-react'
 import type { CodeExecution } from '../CodeExecutionCard'
@@ -36,7 +36,7 @@ function isSingleImageToolSegment(segment: CopSubSegment): boolean {
   return segment.category === 'image' && segment.items.length === 1 && segment.items[0]?.kind === 'call'
 }
 
-export function CopTimeline({
+export const CopTimeline = memo(function CopTimeline({
   segments,
   pool,
   thinkingOnly,
@@ -82,34 +82,22 @@ export function CopTimeline({
   const anyThinkingLive = thinkingLive
   const timelineIsLive = !!live || anyThinkingLive
   const bodyHasContent = hasSegments || hasThinkingOnly
-  const [collapsed, setCollapsed] = useState(() => {
-    if (timelineIsLive && !isComplete) return hasThinkingOnly
-    if (hasThinkingOnly && !isComplete) return false
-    if (hasThinkingOnly && isComplete) return true
-    return true
-  })
-  const [userToggled, setUserToggled] = useState(false)
-  const prevLive = useRef(timelineIsLive)
+  const [collapsed, setCollapsed] = useState(true)
+  const userToggledRef = useRef(false)
 
-  // Auto-collapse when live ends
   useEffect(() => {
-    if (userToggled) return
-    if (prevLive.current && !timelineIsLive && isComplete) {
-      setCollapsed(true)
-    }
-    prevLive.current = timelineIsLive
-  }, [timelineIsLive, isComplete, userToggled])
-
-  // Auto-expand when new segment appears (live mode)
-  useEffect(() => {
-    if (userToggled) return
+    if (userToggledRef.current) return
     if (timelineIsLive && !isComplete) {
       setCollapsed(hasThinkingOnly)
-    }
-    if (hasThinkingOnly && isComplete) {
+    } else if (!timelineIsLive && isComplete) {
       setCollapsed(true)
     }
-  }, [hasThinkingOnly, isComplete, timelineIsLive, userToggled])
+  }, [timelineIsLive, isComplete, hasThinkingOnly])
+
+  const toggleBody = () => {
+    userToggledRef.current = true
+    setCollapsed((v) => !v)
+  }
 
   const aggregatedDurationSec = thinkingOnly?.durationSec ?? 0
   const segmentThinkingStartedAtMs = thinkingOnly?.startedAtMs
@@ -193,11 +181,6 @@ export function CopTimeline({
   }, [collapsed, hasThinkingOnly, live, timelineSegments.length])
 
   if (!shouldRender) return null
-
-  const toggleBody = () => {
-    setUserToggled(true)
-    setCollapsed((v) => !v)
-  }
 
   return (
     <div className={`cop-timeline-root${typography === 'work' ? ' cop-timeline-root--work' : ''}`} style={typography !== 'work' ? { maxWidth: '663px' } : undefined}>
@@ -381,4 +364,4 @@ export function CopTimeline({
       )}
     </div>
   )
-}
+})

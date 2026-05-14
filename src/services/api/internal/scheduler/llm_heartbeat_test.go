@@ -157,3 +157,89 @@ func TestTriggerSchedulerFireOneEnqueuesChannelDeliveryPayloadForDiscordDM(t *te
 		t.Fatalf("channel_delivery.conversation_ref.target = %#v, want %s", got, dmChannelID)
 	}
 }
+
+func TestHeartbeatRuntimeModelResolution(t *testing.T) {
+	db := testutil.SetupPostgresDatabase(t, "scheduler_heartbeat_runtime_model")
+	ctx := context.Background()
+
+	if _, err := migrate.Up(ctx, db.DSN); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := data.NewPool(ctx, db.DSN, data.PoolLimits{MaxConns: 4, MinConns: 0})
+	if err != nil {
+		t.Fatalf("new pool: %v", err)
+	}
+	defer pool.Close()
+
+	accountID := uuid.New()
+	projectID := uuid.New()
+	chatThreadID := uuid.New()
+	heartbeatThreadID := uuid.New()
+	personaThreadID := uuid.New()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO accounts (id, slug, name, type)
+		VALUES ($1, 'runtime-model-account', 'Runtime Model Account', 'personal');
+		INSERT INTO projects (id, account_id, name, visibility, created_at)
+		VALUES ($2, $1, 'Runtime Model Project', 'private', now());
+		INSERT INTO personas (
+			id, project_id, persona_key, version, display_name, prompt_md,
+			tool_allowlist, tool_denylist, budgets_json, roles_json, title_summarize_json,
+			is_active, prompt_cache_control, executor_type, executor_config_json, model, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $2, 'runtime-persona', '1', 'Runtime Persona', 'hello',
+			'[]'::jsonb, '[]'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
+			true, 'none', 'agent.simple', '{}'::jsonb, 'persona-model', now(), now()
+		);
+		INSERT INTO threads (id, account_id, project_id, is_private, config_json, created_at)
+		VALUES
+			($3, $1, $2, false, '{"chat_model":"chat-model"}'::jsonb, now()),
+			($4, $1, $2, false, '{"chat_model":"chat-model","heartbeat_model":"heartbeat-model"}'::jsonb, now()),
+			($5, $1, $2, false, '{}'::jsonb, now());`,
+		accountID,
+		projectID,
+		chatThreadID,
+		heartbeatThreadID,
+		personaThreadID,
+	); err != nil {
+		t.Fatalf("seed runtime model data: %v", err)
+	}
+
+	s := &TriggerScheduler{pool: pool}
+	tests := []struct {
+		name     string
+		row      data.ScheduledTriggerRow
+		expected string
+	}{
+		{
+			name:     "snapshot model",
+			row:      data.ScheduledTriggerRow{Model: "snapshot-model"},
+			expected: "snapshot-model",
+		},
+		{
+			name:     "chat model",
+			row:      data.ScheduledTriggerRow{ThreadID: &chatThreadID, AccountID: accountID, PersonaKey: "runtime-persona", ResolveModelAtRuntime: true},
+			expected: "chat-model",
+		},
+		{
+			name:     "heartbeat model",
+			row:      data.ScheduledTriggerRow{ThreadID: &heartbeatThreadID, AccountID: accountID, PersonaKey: "runtime-persona", ResolveModelAtRuntime: true},
+			expected: "heartbeat-model",
+		},
+		{
+			name:     "persona fallback",
+			row:      data.ScheduledTriggerRow{ThreadID: &personaThreadID, AccountID: accountID, PersonaKey: "runtime-persona", ResolveModelAtRuntime: true},
+			expected: "persona-model",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := s.resolveHeartbeatModel(ctx, tt.row)
+			if err != nil {
+				t.Fatalf("resolve heartbeat model: %v", err)
+			}
+			if got != tt.expected {
+				t.Fatalf("model = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

@@ -49,6 +49,7 @@ import (
 	"arkloop/services/worker/internal/runtime"
 	"arkloop/services/worker/internal/securitycap"
 	"arkloop/services/worker/internal/subagentctl"
+	"arkloop/services/worker/internal/tooldiagnostics"
 	"arkloop/services/worker/internal/toolprovider"
 	"arkloop/services/worker/internal/tools"
 	"arkloop/services/worker/internal/tools/builtin"
@@ -453,7 +454,7 @@ func ComposeDesktopEngine(ctx context.Context, db data.DesktopDB, bus eventbus.E
 	// 尝试从 personas 目录加载
 	personaGetter := loadPersonaRegistryFromFS()
 
-	mcpPool := mcp.NewPool()
+	mcpPool := mcp.NewPool(mcp.WithAuthStore(mcp.NewDBAuthStore(db)), mcp.WithArtifactStore(artifactStore))
 	mcpCacheTTL, err := loadDesktopMCPCacheTTL()
 	if err != nil {
 		return nil, err
@@ -631,23 +632,25 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 	runRuntime.DesktopExecutionMode = strings.TrimSpace(desktop.GetExecutionMode())
 
 	llmRetryMaxAttempts, llmRetryBaseDelayMs := resolveDesktopLLMRetry(ctx, e.db)
+	runIdleTimeout, runWallClockTimeout := resolveDesktopRunTimeouts(ctx, e.db)
 
 	rc := &pipeline.RunContext{
-		Run:                 run,
-		DB:                  e.db,
-		RunStatusDB:         runsRepo,
-		Pool:                nil,
-		MemoryServiceDB:     e.db,
-		MemorySnapshotStore: pipeline.NewDesktopMemorySnapshotStore(e.db),
-		EventBus:            e.bus,
-		TraceID:             traceID,
-		Tracer:              tracer,
-		Emitter:             emitter,
-		Router:              e.auxRouter,
-		Runtime:             &runRuntime,
-		HookRuntime:         e.hookRuntime,
-		HookRegistry:        e.hookRegistry,
-		PluginHookRunner:    pipeline.NewDefaultPluginHookRunner(),
+		Run:                  run,
+		DB:                   e.db,
+		RunStatusDB:          runsRepo,
+		Pool:                 nil,
+		MemoryServiceDB:      e.db,
+		MemorySnapshotStore:  pipeline.NewDesktopMemorySnapshotStore(e.db),
+		EventBus:             e.bus,
+		TraceID:              traceID,
+		Tracer:               tracer,
+		Emitter:              emitter,
+		Router:               e.auxRouter,
+		Runtime:              &runRuntime,
+		HookRuntime:          e.hookRuntime,
+		HookRegistry:         e.hookRegistry,
+		PluginHookRunner:     pipeline.NewDefaultPluginHookRunner(),
+		ToolExecutionTracker: tooldiagnostics.DefaultTracker,
 
 		ExecutorBuilder:     e.executorRegistry,
 		ToolBudget:          map[string]any{},
@@ -663,7 +666,8 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 		AgentReasoningIterationsLimit: 0,
 		ToolContinuationBudgetLimit:   32,
 		MaxParallelTasks:              4,
-		RunWallClockTimeout:           15 * time.Minute,
+		RunIdleTimeout:                runIdleTimeout,
+		RunWallClockTimeout:           runWallClockTimeout,
 		PausedInputTimeout:            5 * time.Minute,
 		IdleHeartbeatInterval:         15 * time.Second,
 		CreditPerUSD:                  1000,
@@ -796,7 +800,6 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 	}
 	middlewares = append(middlewares,
 		desktopRouting(e.auxRouter, e.auxGateway, e.emitDebugEvents, e.db, e.routingLoader, runsRepo, eventsRepo),
-		pipeline.NewModelIdentityMiddleware(),
 		desktopObservedStage("channel_group_context_trim", eventsRepo, pipeline.NewChannelGroupContextTrimMiddleware(pipeline.GroupContextTrimDeps{
 			Pool:            e.db,
 			MessagesRepo:    data.MessagesRepository{},
@@ -814,6 +817,7 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 			EventsRepo:          data.DesktopRunEventsRepository{},
 		}),
 		pipeline.NewHeartbeatPrepareMiddleware(),
+		pipeline.NewModelIdentityMiddleware(),
 		pipeline.NewConditionalToolsMiddleware(),
 		pipeline.NewToolBuildMiddleware(),
 		pipeline.NewToolLoopDetectionMiddleware(),
@@ -1349,6 +1353,25 @@ func desktopChannelContext(db data.DesktopDB) pipeline.RunMiddleware {
 			}
 		}
 		rc.ChannelContext = channelCtx
+		if db != nil && rc.Run.ThreadID != uuid.Nil {
+			overrides := loadDesktopThreadRunOverrides(ctx, db, rc.Run.ThreadID)
+			if overrides.ChatModel != "" {
+				if rc.InputJSON == nil {
+					rc.InputJSON = map[string]any{}
+				}
+				if _, ok := rc.InputJSON["model"]; !ok {
+					if _, higher := rc.InputJSON["output_model_key"]; !higher {
+						rc.InputJSON["model"] = overrides.ChatModel
+					}
+				}
+			}
+			if overrides.ReasoningMode != "" && normalizeDesktopRunReasoningMode(rc.InputJSON["reasoning_mode"]) == "" {
+				rc.ReasoningMode = overrides.ReasoningMode
+				if rc.AgentConfig != nil {
+					rc.AgentConfig.ReasoningMode = overrides.ReasoningMode
+				}
+			}
+		}
 		rc.ChannelToolSurface = pipeline.NewChannelToolSurfaceFromContext(channelCtx)
 		if channelCtx.SenderUserID != nil {
 			rc.UserID = channelCtx.SenderUserID
@@ -2243,6 +2266,32 @@ func loadDesktopChannelConfigJSON(ctx context.Context, db data.DesktopDB, channe
 	return configJSON, nil
 }
 
+type desktopThreadRunOverrides struct {
+	ChatModel     string
+	ReasoningMode string
+}
+
+func loadDesktopThreadRunOverrides(ctx context.Context, db data.DesktopDB, threadID uuid.UUID) desktopThreadRunOverrides {
+	if db == nil || threadID == uuid.Nil {
+		return desktopThreadRunOverrides{}
+	}
+	var raw []byte
+	if err := db.QueryRow(ctx, `SELECT COALESCE(config_json, '{}') FROM threads WHERE id = $1`, threadID.String()).Scan(&raw); err != nil {
+		return desktopThreadRunOverrides{}
+	}
+	var payload struct {
+		ChatModel     string `json:"chat_model"`
+		ReasoningMode string `json:"reasoning_mode"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return desktopThreadRunOverrides{}
+	}
+	return desktopThreadRunOverrides{
+		ChatModel:     strings.TrimSpace(payload.ChatModel),
+		ReasoningMode: normalizeDesktopRunReasoningMode(payload.ReasoningMode),
+	}
+}
+
 func loadDesktopDeliveryChannel(ctx context.Context, db data.DesktopDB, channelID uuid.UUID) (*desktopDeliveryChannelRecord, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db must not be nil")
@@ -3009,13 +3058,7 @@ func desktopPersonaResolution(
 			rc.StreamThinking = def.StreamThinking
 			rc.ToolDenylist = append([]string(nil), def.ToolDenylist...)
 			if len(def.ToolAllowlist) > 0 {
-				narrowed := make(map[string]struct{}, len(def.ToolAllowlist))
-				for _, name := range def.ToolAllowlist {
-					if pipeline.ToolAllowed(rc.AllowlistSet, rc.ToolRegistry, name) {
-						narrowed[name] = struct{}{}
-					}
-				}
-				rc.AllowlistSet = narrowed
+				rc.AllowlistSet = pipeline.NarrowAllowlistPreservingMCP(rc.AllowlistSet, rc.ToolRegistry, def.ToolAllowlist, rc.MCPToolNames)
 			}
 			for _, name := range def.ToolDenylist {
 				pipeline.RemoveToolOrGroup(rc.AllowlistSet, rc.ToolRegistry, name)

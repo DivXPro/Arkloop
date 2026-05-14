@@ -6,10 +6,10 @@ import {
   agentEventToolInput,
   agentEventToolOutput,
 } from './agent-ui/event-data'
-import type { ArtifactRef, BrowserActionRef, CodeExecutionRef, FileOpRef, MessageThinkingRef, SubAgentRef, WebFetchRef, WidgetRef } from './storage'
+import type { ArtifactRef, BrowserActionRef, CodeExecutionRef, FileOpRef, McpAppCsp, McpAppResource, MessageThinkingRef, SubAgentRef, WebFetchRef, WidgetRef } from './storage'
 import { basename, presentationForTool, truncate } from './toolPresentation'
+import { contentText } from './timelineText'
 import { FILE_OP_TOOL_NAMES } from './copSubSegment'
-
 const CODE_EXECUTION_CALL_TOOL_NAMES = new Set(['python_execute', 'exec_command'])
 const CODE_EXECUTION_RESULT_TOOL_NAMES = new Set(['python_execute', 'exec_command', 'continue_process', 'terminate_process'])
 const TERMINAL_CONTROL_SEQUENCE_PATTERN = new RegExp(String.raw`\u001b\[[0-9;?]*[ -/]*[@-~]`, 'g')
@@ -59,21 +59,108 @@ function pickToolCallId(event: AgentUIEvent): string {
   return typeof raw === 'string' && raw.trim() !== '' ? raw : event.id
 }
 
-export function extractArtifacts(result: unknown): ArtifactRef[] {
-  if (!result || typeof result !== 'object') return []
-  const artifacts = (result as { artifacts?: unknown[] }).artifacts
-  if (!Array.isArray(artifacts)) return []
+function extractFrom(obj: Record<string, unknown>): ArtifactRef[] {
+  const artifacts: ArtifactRef[] = []
+  const seen = new Set<string>()
+
+  // 从 artifacts 数组提取
+  const rawArtifacts = obj.artifacts
+  if (Array.isArray(rawArtifacts)) {
+    for (const item of rawArtifacts) {
+      if (!item || typeof item !== 'object') continue
+      const r = item as Record<string, unknown>
+      const key = typeof r.key === 'string' ? r.key : ''
+      if (!key || typeof r.filename !== 'string') continue
+      if (seen.has(key)) continue
+      seen.add(key)
+      const artifact: ArtifactRef = {
+        key,
+        filename: r.filename as string,
+        size: typeof r.size === 'number' ? r.size : 0,
+        mime_type: typeof r.mime_type === 'string' ? r.mime_type : '',
+        title: typeof r.title === 'string' ? r.title : undefined,
+        display: r.display === 'inline' || r.display === 'panel'
+          ? r.display as 'inline' | 'panel'
+          : undefined,
+      }
+      artifacts.push(artifact)
+    }
+  }
+
   return artifacts
-    .filter((item): item is Record<string, unknown> => item != null && typeof item === 'object')
-    .filter((item) => typeof item.key === 'string' && typeof item.filename === 'string')
-    .map((item) => ({
-      key: item.key as string,
-      filename: item.filename as string,
+}
+
+export function extractResources(source: unknown): McpAppResource[] {
+  if (!source || typeof source !== 'object') return []
+  const s = source as Record<string, unknown>
+
+  const nested = s.result ?? s.output
+  if (!nested || typeof nested !== 'object') return []
+  const result = nested as Record<string, unknown>
+
+  const rawResources = result.resources
+  if (!Array.isArray(rawResources)) return []
+
+  const refs: McpAppResource[] = []
+  for (const r of rawResources) {
+    if (!r || typeof r !== 'object') continue
+    const item = r as Record<string, unknown>
+    const key = typeof item.key === 'string' ? item.key : ''
+    if (!key) continue
+    let csp: McpAppCsp | undefined
+    if (item.csp && typeof item.csp === 'object') {
+      const raw = item.csp as Record<string, unknown>
+      const arr = (k: string): string[] | undefined => {
+        const v = raw[k]
+        return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined
+      }
+      csp = {
+        connectDomains: arr('connectDomains'),
+        resourceDomains: arr('resourceDomains'),
+        frameDomains: arr('frameDomains'),
+        baseUriDomains: arr('baseUriDomains'),
+      }
+    }
+    refs.push({
+      key,
+      uri: typeof item.uri === 'string' ? item.uri : '',
+      filename: typeof item.filename === 'string' ? item.filename : '',
+      mimeType: typeof item.mime_type === 'string' ? item.mime_type : '',
       size: typeof item.size === 'number' ? item.size : 0,
-      mime_type: typeof item.mime_type === 'string' ? item.mime_type : '',
-      title: typeof item.title === 'string' ? item.title : undefined,
-      display: item.display === 'inline' || item.display === 'panel' ? item.display as 'inline' | 'panel' : undefined,
-    }))
+      initialData: result,
+      csp,
+    })
+  }
+  return refs
+}
+
+export function buildMessageResourcesFromAgentEvents(events: AgentUIEvent[]): McpAppResource[] {
+  const resources: McpAppResource[] = []
+  const seen = new Set<string>()
+  for (const event of events) {
+    if (event.type !== 'tool-result') continue
+    for (const res of extractResources(event.data)) {
+      if (seen.has(res.key)) continue
+      seen.add(res.key)
+      resources.push(res)
+    }
+  }
+  return resources
+}
+
+export function extractArtifacts(source: unknown): ArtifactRef[] {
+  if (!source || typeof source !== 'object') return []
+  const s = source as Record<string, unknown>
+
+  const artifacts = extractFrom(s)
+
+  // 从嵌套的 result/output 中提取（artifacts 在 result 内部）
+  const nested = s.result ?? s.output
+  if (nested && typeof nested === 'object') {
+    artifacts.push(...extractFrom(nested as Record<string, unknown>))
+  }
+
+  return artifacts
 }
 
 export function buildMessageArtifactsFromAgentEvents(events: AgentUIEvent[]): ArtifactRef[] {
@@ -81,7 +168,8 @@ export function buildMessageArtifactsFromAgentEvents(events: AgentUIEvent[]): Ar
   const seen = new Set<string>()
   for (const event of events) {
     if (event.type !== 'tool-result') continue
-    for (const artifact of extractArtifacts(agentEventToolOutput(event.data))) {
+    // 从 event.data 和嵌套 result/output 中提取 artifacts
+    for (const artifact of extractArtifacts(event.data)) {
       if (seen.has(artifact.key)) continue
       seen.add(artifact.key)
       artifacts.push(artifact)
@@ -1441,6 +1529,7 @@ export function applyFileOpToolCall(
     operation: typeof args.operation === 'string' ? args.operation : undefined,
     displayKind: presentation.kind,
     displayDescription: overrideLabel ?? presentation.description,
+    displayText: overrideLabel ? contentText(overrideLabel) : presentation.text,
     displaySubject: presentation.subject,
     displayDetail: presentation.detail,
     ...(inputPreview ? { output: inputPreview } : {}),

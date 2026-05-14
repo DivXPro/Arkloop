@@ -3,7 +3,6 @@ package accountapi
 import (
 	"encoding/json"
 	nethttp "net/http"
-	"strings"
 
 	"arkloop/services/api/internal/auth"
 	"arkloop/services/api/internal/data"
@@ -14,21 +13,15 @@ import (
 )
 
 type channelBindingResponse struct {
-	BindingID                string  `json:"binding_id"`
-	ChannelIdentityID        string  `json:"channel_identity_id"`
-	DisplayName              *string `json:"display_name"`
-	PlatformSubjectID        string  `json:"platform_subject_id"`
-	IsOwner                  bool    `json:"is_owner"`
-	HeartbeatEnabled         bool    `json:"heartbeat_enabled"`
-	HeartbeatIntervalMinutes int     `json:"heartbeat_interval_minutes"`
-	HeartbeatModel           *string `json:"heartbeat_model"`
+	BindingID         string  `json:"binding_id"`
+	ChannelIdentityID string  `json:"channel_identity_id"`
+	DisplayName       *string `json:"display_name"`
+	PlatformSubjectID string  `json:"platform_subject_id"`
+	IsOwner           bool    `json:"is_owner"`
 }
 
 type updateChannelBindingRequest struct {
-	MakeOwner                bool    `json:"make_owner"`
-	HeartbeatEnabled         *bool   `json:"heartbeat_enabled"`
-	HeartbeatIntervalMinutes *int    `json:"heartbeat_interval_minutes"`
-	HeartbeatModel           *string `json:"heartbeat_model"`
+	MakeOwner bool `json:"make_owner"`
 }
 
 func handleChannelBindingsSubresource(
@@ -118,10 +111,6 @@ func updateChannelBinding(
 		httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", "request validation failed", traceID, nil)
 		return
 	}
-	if req.HeartbeatIntervalMinutes != nil && *req.HeartbeatIntervalMinutes <= 0 {
-		httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", "heartbeat_interval_minutes must be positive", traceID, nil)
-		return
-	}
 
 	tx, err := pool.BeginTx(r.Context(), pgx.TxOptions{})
 	if err != nil {
@@ -132,7 +121,6 @@ func updateChannelBinding(
 
 	linksRepo := channelIdentityLinksRepo.WithTx(tx)
 	channelsRepoTx := channelsRepo.WithTx(tx)
-	personasRepoTx := personasRepo.WithTx(tx)
 
 	binding, err := linksRepo.GetBinding(r.Context(), accountID, channelID, bindingID)
 	if err != nil {
@@ -162,59 +150,6 @@ func updateChannelBinding(
 		if _, err := channelsRepoTx.Update(r.Context(), channelID, accountID, data.ChannelUpdate{OwnerUserID: &nextOwner}); err != nil {
 			httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
 			return
-		}
-	}
-
-	if req.HeartbeatEnabled != nil || req.HeartbeatIntervalMinutes != nil || req.HeartbeatModel != nil {
-		enabled := binding.HeartbeatEnabled
-		intervalMinutes := binding.HeartbeatIntervalMinutes
-		model := binding.HeartbeatModel
-		if req.HeartbeatEnabled != nil {
-			enabled = *req.HeartbeatEnabled
-		}
-		if req.HeartbeatIntervalMinutes != nil {
-			intervalMinutes = *req.HeartbeatIntervalMinutes
-		}
-		if req.HeartbeatModel != nil {
-			model = strings.TrimSpace(*req.HeartbeatModel)
-		}
-		if err := linksRepo.UpdateHeartbeatConfig(r.Context(), binding.BindingID, enabled, intervalMinutes, model); err != nil {
-			httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
-			return
-		}
-		triggerRepo := data.ScheduledTriggersRepository{}
-		if !enabled {
-			if err := triggerRepo.DeleteHeartbeat(r.Context(), tx, binding.ChannelID, binding.ChannelIdentityID); err != nil {
-				httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
-				return
-			}
-		} else {
-			channel, channelErr := channelsRepoTx.GetByID(r.Context(), channelID)
-			if channelErr != nil {
-				httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
-				return
-			}
-			if channel == nil || channel.AccountID != accountID {
-				httpkit.WriteError(w, nethttp.StatusNotFound, "channels.not_found", "channel not found", traceID, nil)
-				return
-			}
-			if channel.PersonaID == nil || *channel.PersonaID == uuid.Nil {
-				httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", "channel persona not configured", traceID, nil)
-				return
-			}
-			persona, personaErr := personasRepoTx.GetByIDForAccount(r.Context(), accountID, *channel.PersonaID)
-			if personaErr != nil {
-				httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
-				return
-			}
-			if persona == nil || strings.TrimSpace(persona.PersonaKey) == "" {
-				httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", "channel persona not found", traceID, nil)
-				return
-			}
-			if err := triggerRepo.UpsertHeartbeat(r.Context(), tx, accountID, binding.ChannelID, binding.ChannelIdentityID, strings.TrimSpace(persona.PersonaKey), model, intervalMinutes); err != nil {
-				httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
-				return
-			}
 		}
 	}
 
@@ -278,13 +213,6 @@ func deleteChannelBinding(
 		httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
 		return
 	}
-	if binding.HeartbeatEnabled {
-		triggerRepo := data.ScheduledTriggersRepository{}
-		if err := triggerRepo.DeleteHeartbeat(r.Context(), tx, binding.ChannelID, binding.ChannelIdentityID); err != nil {
-			httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
-			return
-		}
-	}
 	if err := tx.Commit(r.Context()); err != nil {
 		httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
 		return
@@ -293,20 +221,12 @@ func deleteChannelBinding(
 }
 
 func toChannelBindingResponse(item data.ChannelBinding) channelBindingResponse {
-	var heartbeatModel *string
-	model := strings.TrimSpace(item.HeartbeatModel)
-	if model != "" {
-		heartbeatModel = &model
-	}
 	return channelBindingResponse{
-		BindingID:                item.BindingID.String(),
-		ChannelIdentityID:        item.ChannelIdentityID.String(),
-		DisplayName:              item.DisplayName,
-		PlatformSubjectID:        item.PlatformSubjectID,
-		IsOwner:                  item.IsOwner,
-		HeartbeatEnabled:         item.HeartbeatEnabled,
-		HeartbeatIntervalMinutes: item.HeartbeatIntervalMinutes,
-		HeartbeatModel:           heartbeatModel,
+		BindingID:         item.BindingID.String(),
+		ChannelIdentityID: item.ChannelIdentityID.String(),
+		DisplayName:       item.DisplayName,
+		PlatformSubjectID: item.PlatformSubjectID,
+		IsOwner:           item.IsOwner,
 	}
 }
 

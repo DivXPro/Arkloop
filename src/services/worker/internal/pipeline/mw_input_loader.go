@@ -1490,6 +1490,43 @@ func BuildMessagePartsWithOptions(ctx context.Context, store MessageAttachmentSt
 				Attachment: &attachment,
 				Data:       dataBytes,
 			})
+		case messagecontent.PartTypeResource:
+			if part.Attachment == nil || strings.TrimSpace(part.Attachment.URI) == "" {
+				return nil, fmt.Errorf("resource part requires attachment with uri")
+			}
+			if part.ExtractedText != "" {
+				attachmentCopy := *part.Attachment
+				parts = append(parts, llm.ContentPart{
+					Type:          messagecontent.PartTypeResource,
+					Attachment:    &attachmentCopy,
+					Data:          []byte(part.ExtractedText),
+					ExtractedText: part.ExtractedText,
+				})
+				continue
+			}
+			if strings.TrimSpace(part.Attachment.Key) != "" {
+				if store == nil {
+					return nil, fmt.Errorf("message attachment store not configured")
+				}
+				dataBytes, contentType, err := store.GetWithContentType(ctx, part.Attachment.Key)
+				if err != nil {
+					if objectstore.IsNotFound(err) {
+						return nil, fmt.Errorf("resource blob not found")
+					}
+					return nil, err
+				}
+				attachmentCopy := *part.Attachment
+				if strings.TrimSpace(contentType) != "" {
+					attachmentCopy.MimeType = contentType
+				}
+				parts = append(parts, llm.ContentPart{
+					Type:       messagecontent.PartTypeResource,
+					Attachment: &attachmentCopy,
+					Data:       dataBytes,
+				})
+				continue
+			}
+			return nil, fmt.Errorf("resource part missing both text and blob_key")
 		}
 	}
 	if len(parts) == 0 {

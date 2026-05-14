@@ -23,6 +23,7 @@ import (
 	"arkloop/services/shared/telegrambot"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -514,7 +515,7 @@ func TestTelegramWebhookRejectsInvalidSignature(t *testing.T) {
 	assertCountAccount(t, env.pool, `SELECT COUNT(*) FROM runs`, 0)
 }
 
-func TestCreateTelegramChannelRejectsInvalidDefaultModelSelector(t *testing.T) {
+func TestCreateTelegramChannelStripsDefaultModel(t *testing.T) {
 	env := setupTelegramChannelsTestEnv(t, telegrambot.NewClient("https://api.telegram.org", nil))
 
 	resp := doJSONAccount(
@@ -532,12 +533,20 @@ func TestCreateTelegramChannelRejectsInvalidDefaultModelSelector(t *testing.T) {
 		},
 		authHeader(env.accessToken),
 	)
-	if resp.Code != nethttp.StatusUnprocessableEntity {
-		t.Fatalf("expected validation error, got %d %s", resp.Code, resp.Body.String())
+	if resp.Code != nethttp.StatusCreated {
+		t.Fatalf("expected created, got %d %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	cfg, _ := body["config_json"].(map[string]any)
+	if _, ok := cfg["default_model"]; ok {
+		t.Fatalf("default_model should be stripped: %#v", cfg)
 	}
 }
 
-func TestUpdateTelegramChannelRejectsInvalidDefaultModelSelector(t *testing.T) {
+func TestUpdateTelegramChannelStripsDefaultModel(t *testing.T) {
 	env := setupTelegramChannelsTestEnv(t, telegrambot.NewClient("https://api.telegram.org", nil))
 	channel := createActiveTelegramChannel(t, env, "bot-token", []string{"10001"}, "")
 
@@ -552,8 +561,16 @@ func TestUpdateTelegramChannelRejectsInvalidDefaultModelSelector(t *testing.T) {
 		},
 		authHeader(env.accessToken),
 	)
-	if resp.Code != nethttp.StatusUnprocessableEntity {
-		t.Fatalf("expected validation error, got %d %s", resp.Code, resp.Body.String())
+	if resp.Code != nethttp.StatusOK {
+		t.Fatalf("expected ok, got %d %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	cfg, _ := body["config_json"].(map[string]any)
+	if _, ok := cfg["default_model"]; ok {
+		t.Fatalf("default_model should be stripped: %#v", cfg)
 	}
 }
 
@@ -589,16 +606,64 @@ func TestTelegramHeartbeatModelRejectsInvalidSelectorWithoutPersisting(t *testin
 		t.Fatalf("webhook status: %d %s", resp.Code, resp.Body.String())
 	}
 
-	var heartbeatModel string
+	var count int
 	if err := env.pool.QueryRow(
 		context.Background(),
-		`SELECT heartbeat_model FROM channel_identities WHERE channel_type = 'telegram' AND platform_subject_id = $1`,
-		"-100123",
-	).Scan(&heartbeatModel); err != nil {
-		t.Fatalf("query heartbeat model: %v", err)
+		`SELECT COUNT(*) FROM threads WHERE account_id = $1 AND config_json ? 'heartbeat_model'`,
+		env.accountID,
+	).Scan(&count); err != nil {
+		t.Fatalf("query heartbeat config: %v", err)
 	}
-	if strings.TrimSpace(heartbeatModel) != "" {
-		t.Fatalf("expected heartbeat_model to remain empty, got %q", heartbeatModel)
+	if count != 0 {
+		t.Fatalf("expected no thread heartbeat_model, got %d", count)
+	}
+}
+
+func TestModelCommandWritesThreadChatModel(t *testing.T) {
+	env := setupTelegramChannelsTestEnv(t, telegrambot.NewClient("https://api.telegram.org", nil))
+	seedTelegramSelectorRoute(t, env, "cmd-cred", "gpt-command")
+
+	threadID := uuid.New()
+	if _, err := env.pool.Exec(context.Background(), `
+		INSERT INTO threads (id, account_id, created_by_user_id, project_id, is_private, config_json, created_at)
+		VALUES ($1, $2, $3, $4, false, '{"default_model":"old-model","reasoning_mode":"high"}'::jsonb, now())`,
+		threadID,
+		env.accountID,
+		env.userID,
+		env.projectID,
+	); err != nil {
+		t.Fatalf("seed thread: %v", err)
+	}
+
+	tx, err := env.pool.BeginTx(context.Background(), pgx.TxOptions{})
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	defer tx.Rollback(context.Background()) //nolint:errcheck
+
+	reply, _, err := handlePreferenceCommand(context.Background(), tx, env.accountID, threadID, "/model cmd-cred^gpt-command", nil)
+	if err != nil {
+		t.Fatalf("handle model command: %v", err)
+	}
+	if reply != "model → cmd-cred^gpt-command" {
+		t.Fatalf("reply = %q", reply)
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	var chatModel string
+	var hasDefault bool
+	if err := env.pool.QueryRow(context.Background(), `
+		SELECT COALESCE(config_json->>'chat_model', ''), config_json ? 'default_model'
+		  FROM threads
+		 WHERE id = $1`,
+		threadID,
+	).Scan(&chatModel, &hasDefault); err != nil {
+		t.Fatalf("read thread config: %v", err)
+	}
+	if chatModel != "cmd-cred^gpt-command" || hasDefault {
+		t.Fatalf("unexpected thread config: chat_model=%q has_default=%v", chatModel, hasDefault)
 	}
 }
 

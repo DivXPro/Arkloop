@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import { Check, Share2, Split, Terminal } from 'lucide-react'
 import type { AgentMessage } from '../../agent-ui'
 import type { WebSource, ArtifactRef, BrowserActionRef, WidgetRef } from '../../storage'
@@ -199,7 +199,7 @@ export function AssistantActionBar({
   )
 }
 
-export function AssistantMessage({
+export const AssistantMessage = memo(function AssistantMessage({
   message,
   streamMarkdown = false,
   onFork,
@@ -289,4 +289,4 @@ export function AssistantMessage({
       </div>
     </div>
   )
-}
+})

@@ -148,27 +148,17 @@ export function SettingsModal({ me, accessToken, initialTab = 'account', onClose
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6" style={{ scrollbarGutter: 'stable' }}>
-            {activeKey === 'account' && !profileView && (
-              <AccountContent
-                me={me}
-                userInitial={userInitial}
-                onLogout={() => { onLogout(); onClose() }}
-                onEditProfile={() => setProfileView(true)}
-              />
-            )}
-            {activeKey === 'account' && profileView && (
-              <ProfileContent
-                me={me}
-                accessToken={accessToken}
-                userInitial={userInitial}
-                onMeUpdated={onMeUpdated}
-              />
-            )}
-            {activeKey === 'appearance' && (
+          <div className="relative flex-1 overflow-hidden">
+            <div className={['absolute inset-0 overflow-y-auto p-6', activeKey === 'account' ? '' : 'hidden'].join(' ')} style={{ scrollbarGutter: 'stable' }}>
+              {!profileView
+                ? <AccountContent me={me} userInitial={userInitial} onLogout={() => { onLogout(); onClose() }} onEditProfile={() => setProfileView(true)} />
+                : <ProfileContent me={me} accessToken={accessToken} userInitial={userInitial} onMeUpdated={onMeUpdated} />
+              }
+            </div>
+            <div className={['absolute inset-0 overflow-y-auto p-6', activeKey === 'appearance' ? '' : 'hidden'].join(' ')} style={{ scrollbarGutter: 'stable' }}>
               <AppearanceContent />
-            )}
-            {activeKey === 'settings' && (
+            </div>
+            <div className={['absolute inset-0 overflow-y-auto p-6', activeKey === 'settings' ? '' : 'hidden'].join(' ')} style={{ scrollbarGutter: 'stable' }}>
               <div className="flex flex-col gap-6">
                 <LanguageContent locale={locale} setLocale={setLocale} label={t.language} />
                 <TimeZoneSettings me={me} accessToken={accessToken} onMeUpdated={onMeUpdated} />
@@ -179,27 +169,33 @@ export function SettingsModal({ me, accessToken, initialTab = 'account', onClose
                   <ReportFeedbackContent accessToken={accessToken} />
                 </div>
               </div>
-            )}
-            {activeKey === 'tools' && (
+            </div>
+            <div className={['absolute inset-0 overflow-y-auto p-6', activeKey === 'tools' ? '' : 'hidden'].join(' ')} style={{ scrollbarGutter: 'stable' }}>
               <ToolsSettings accessToken={accessToken} />
-            )}
-            {activeKey === 'skills' && (
+            </div>
+            <div className={['absolute inset-0 overflow-y-auto p-6', activeKey === 'skills' ? '' : 'hidden'].join(' ')} style={{ scrollbarGutter: 'stable' }}>
               <SkillsSettingsContent accessToken={accessToken} onTrySkill={(prompt) => { onClose(); onTrySkill?.(prompt) }} />
+            </div>
+            {!localMode && (
+              <div className={['absolute inset-0 overflow-y-auto p-6', activeKey === 'credits' ? '' : 'hidden'].join(' ')} style={{ scrollbarGutter: 'stable' }}>
+                <CreditsContent accessToken={accessToken} onCreditsChanged={onCreditsChanged} />
+              </div>
             )}
-            {activeKey === 'credits' && !localMode && (
-              <CreditsContent accessToken={accessToken} onCreditsChanged={onCreditsChanged} />
-            )}
-            {activeKey === 'models' && (
+            <div className={['absolute inset-0 overflow-y-auto p-6', activeKey === 'models' ? '' : 'hidden'].join(' ')} style={{ scrollbarGutter: 'stable' }}>
               <ProvidersSettings accessToken={accessToken} />
-            )}
-            {activeKey === 'channels' && (
+            </div>
+            <div className={['absolute inset-0 overflow-y-auto p-6', activeKey === 'channels' ? '' : 'hidden'].join(' ')} style={{ scrollbarGutter: 'stable' }}>
               <ChannelsSettingsContent accessToken={accessToken} />
-            )}
-            {activeKey === 'connection' && (
-              <ConnectionSettingsContent />
-            )}
-            {activeKey === 'updates' && isDesktop() && (
-              <UpdateSettingsContent />
+            </div>
+            {isDesktop() && (
+              <>
+                <div className={['absolute inset-0 overflow-y-auto p-6', activeKey === 'connection' ? '' : 'hidden'].join(' ')} style={{ scrollbarGutter: 'stable' }}>
+                  <ConnectionSettingsContent />
+                </div>
+                <div className={['absolute inset-0 overflow-y-auto p-6', activeKey === 'updates' ? '' : 'hidden'].join(' ')} style={{ scrollbarGutter: 'stable' }}>
+                  <UpdateSettingsContent />
+                </div>
+              </>
             )}
           </div>
         </div>

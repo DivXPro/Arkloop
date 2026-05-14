@@ -19,7 +19,6 @@ export interface LocaleStrings {
   loading: string;
   connectionFailed: string;
   retryConnection: string;
-  enterprisePlan: string;
   // sidebar grouping
   sidebarGrouping: string;
   sidebarGroupingDesc: string;
@@ -102,6 +101,8 @@ export interface LocaleStrings {
   sseReconnectNotice: string;
   failedRunTitle: string;
   retryAction: string;
+  messageSending: string;
+  messageNotSent: string;
   resetAction: string;
   logout: string;
   language: string;
@@ -264,6 +265,8 @@ export interface LocaleStrings {
     detailUpdatedAt: string;
     detailDescription: string;
     noDescription: string;
+    removeConfirmTitle: string;
+    removeConfirmBody: (displayName: string, skillKey: string, version: string) => string;
     installedTab: string;
     marketplaceTab: string;
     builtinTab: string;
@@ -278,6 +281,7 @@ export interface LocaleStrings {
     externalAddDir: string;
     externalAddPlaceholder: string;
     externalRemoveDir: string;
+    externalScanSummary: (dirCount: number, skillCount: number) => string;
     externalLoadFailed: string;
     externalSaveFailed: string;
     externalRemoveFailed: string;
@@ -449,6 +453,7 @@ export interface LocaleStrings {
   tasks: string;
   tasksEmpty: string;
   workGreeting: string;
+  worked: string;
   // thread context menu
   starThread: string
   unstarThread: string
@@ -905,6 +910,8 @@ export interface LocaleStrings {
     title: string;
     description: string;
     auditLoading: string;
+    sectionDetect: string;
+    sectionResponse: string;
   };
 
   // desktop settings navigation
@@ -1018,6 +1025,7 @@ export interface LocaleStrings {
     connectorsDesc: string;
     pluginsTitle: string;
     pluginsDesc: string;
+    skillsTitle: string;
     pluginsPage: {
       installedTab: string;
       marketplaceTab: string;
@@ -1028,6 +1036,7 @@ export interface LocaleStrings {
       emptyMarketplace: string;
       loadFailed: string;
       runtimeInstallFailed: string;
+      runtimeCheckFailed: string;
       enableFailed: string;
       disableFailed: string;
       installRuntime: string;
@@ -1046,13 +1055,26 @@ export interface LocaleStrings {
       custom: string;
       version: string;
       capabilities: string;
-      pluginId: string;
       source: string;
       runtimeStatus: string;
+      permissionApp: string;
+      bundleId: string;
       notRequired: string;
       status: string;
       overview: string;
       contributions: string;
+      settingsSection: string;
+      settingSaveFailed: string;
+      permissionsSection: string;
+      accessibilityPermission: string;
+      screenRecordingPermission: string;
+      permissionCheckedAt: string;
+      permissionError: string;
+      checkPermissions: string;
+      checking: string;
+      unchecked: string;
+      granted: string;
+      notGranted: string;
     };
     extensionsTitle: string;
     extensionsDesc: string;
@@ -1136,6 +1158,8 @@ export interface LocaleStrings {
     runsHistoryColModel: string;
     runsHistoryColStatus: string;
     runsHistoryColTokens: string;
+    runsHistoryColCost: string;
+    runsHistoryColCacheHit: string;
     runsHistoryColTime: string;
     runsHistoryOpen: string;
     runsHistoryPrev: string;
@@ -1197,9 +1221,11 @@ export interface LocaleStrings {
     fetchProviderFirecrawl: string;
     searchProviderBasic: string;
     searchProviderTavily: string;
+    searchProviderExa: string;
     searchProviderSearxng: string;
     searchProviderBasicDesc: string;
     searchProviderTavilyDesc: string;
+    searchProviderExaDesc: string;
     searchProviderSearxngDesc: string;
     fetchProviderJinaDesc: string;
     fetchProviderBasicDesc: string;

@@ -84,7 +84,9 @@ export function isJsonMime(mimeType: string, filename: string): boolean {
 }
 
 export function isIframeMime(mimeType: string): boolean {
-  return mimeType === 'text/html' || mimeType === 'image/svg+xml'
+  if (!mimeType) return false
+  const base = mimeType.split(';')[0].trim().toLowerCase()
+  return base === 'text/html' || base === 'image/svg+xml'
 }
 
 export function isCodeMime(mimeType: string, filename: string): boolean {

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode, type WheelEvent } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode, type WheelEvent } from 'react'
 import { FileText, FolderOpen, Globe2, Plus, X } from 'lucide-react'
 import { iconButtonSmCls } from './buttonStyles'
 import { DropdownAction } from './DropdownAction'
+import { rightPanelIconButtonCls, rightPanelIconButtonSize, rightPanelIconSize } from './rightPanelControls'
 import { useLocale } from '../contexts/LocaleContext'
 import './RightPanel.css'
 
@@ -36,9 +37,9 @@ type Props = {
 }
 
 function TabIcon({ kind }: { kind: RightPanelTab['kind'] }) {
-  if (kind === 'web') return <Globe2 size={14} />
-  if (kind === 'files') return <FolderOpen size={14} />
-  return <FileText size={14} />
+  if (kind === 'web') return <Globe2 size={rightPanelIconSize} />
+  if (kind === 'files') return <FolderOpen size={rightPanelIconSize} />
+  return <FileText size={rightPanelIconSize} />
 }
 
 type DropIndicator = {
@@ -50,7 +51,7 @@ function sameStringArray(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index])
 }
 
-export function RightPanel({
+export const RightPanel = memo(function RightPanel({
   tabs,
   activeTabId,
   onSelectTab,
@@ -240,11 +241,13 @@ export function RightPanel({
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 5,
+                  justifyContent: tab.hideTitle ? 'center' : undefined,
+                  gap: tab.hideTitle ? 0 : 5,
                   minWidth: 0,
                   maxWidth: 220,
+                  width: tab.hideTitle ? rightPanelIconButtonSize : undefined,
                   height: 28,
-                  padding: '0 8px',
+                  padding: tab.hideTitle ? 0 : '0 8px',
                   borderRadius: 6.5,
                   border: 0,
                   background: active ? 'var(--c-bg-deep)' : undefined,
@@ -300,9 +303,9 @@ export function RightPanel({
               aria-label={effectiveAddLabel}
               aria-expanded={addMenuOpen}
               onClick={() => setAddMenuOpen((open) => !open)}
-              className={`${iconButtonSmCls} right-panel-tabbar__add-button`}
+              className={`${rightPanelIconButtonCls} right-panel-tabbar__add-button`}
             >
-              <Plus size={16} />
+              <Plus size={rightPanelIconSize} />
             </button>
             <div className="right-panel-tabbar__add-menu" data-open={addMenuOpen}>
               {addOptions.map((option) => (
@@ -330,4 +333,4 @@ export function RightPanel({
       </div>
     </div>
   )
-}
+})

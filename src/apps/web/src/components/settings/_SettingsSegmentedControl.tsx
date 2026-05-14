@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import { useLayoutEffect, useRef, useState } from 'react'
 
 type Option<T extends string> = {
@@ -8,7 +8,7 @@ type Option<T extends string> = {
   ariaLabel?: string
 }
 
-export function SettingsSegmentedControl<T extends string>({
+function SettingsSegmentedControlImpl<T extends string>({
   value,
   options,
   onChange,
@@ -22,6 +22,8 @@ export function SettingsSegmentedControl<T extends string>({
   const containerRef = useRef<HTMLDivElement>(null)
   const [pill, setPill] = useState({ left: 0, width: 0 })
   const [animate, setAnimate] = useState(false)
+  const initializedRef = useRef(false)
+  const animationFrameRef = useRef<number | null>(null)
 
   useLayoutEffect(() => {
     const container = containerRef.current
@@ -30,19 +32,34 @@ export function SettingsSegmentedControl<T extends string>({
     const measure = () => {
       const button = container.querySelector<HTMLButtonElement>(`[data-capsule="${value}"]`)
       if (!button) return
-      setPill({ left: button.offsetLeft, width: button.offsetWidth })
+      const next = { left: button.offsetLeft, width: button.offsetWidth }
+      if (next.width <= 0) return
+
+      setPill((current) => (
+        current.left === next.left && current.width === next.width ? current : next
+      ))
+
+      if (initializedRef.current) return
+      setAnimate(false)
+      if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = requestAnimationFrame(() => {
+        initializedRef.current = true
+        setAnimate(true)
+        animationFrameRef.current = null
+      })
     }
 
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(container)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current)
+        animationFrameRef.current = null
+      }
+    }
   }, [value])
-
-  useLayoutEffect(() => {
-    const id = requestAnimationFrame(() => setAnimate(true))
-    return () => cancelAnimationFrame(id)
-  }, [])
 
   return (
     <div
@@ -89,3 +106,5 @@ export function SettingsSegmentedControl<T extends string>({
     </div>
   )
 }
+
+export const SettingsSegmentedControl = memo(SettingsSegmentedControlImpl) as typeof SettingsSegmentedControlImpl

@@ -17,11 +17,10 @@ import (
 const discordRemoteRequestTimeout = 10 * time.Second
 
 type discordChannelConfig struct {
-	AllowedServerIDs   []string `json:"allowed_server_ids"`
-	AllowedChannelIDs  []string `json:"allowed_channel_ids"`
-	DefaultModel       string   `json:"default_model,omitempty"`
-	DiscordApplicationID string `json:"discord_application_id,omitempty"`
-	DiscordBotUserID     string `json:"discord_bot_user_id,omitempty"`
+	AllowedServerIDs     []string `json:"allowed_server_ids"`
+	AllowedChannelIDs    []string `json:"allowed_channel_ids"`
+	DiscordApplicationID string   `json:"discord_application_id,omitempty"`
+	DiscordBotUserID     string   `json:"discord_bot_user_id,omitempty"`
 }
 
 func normalizeDiscordChannelConfig(raw json.RawMessage) (json.RawMessage, *discordChannelConfig, error) {
@@ -40,7 +39,6 @@ func normalizeDiscordChannelConfig(raw json.RawMessage) (json.RawMessage, *disco
 	}
 	cfg.AllowedServerIDs = normalizeDiscordIDList(cfg.AllowedServerIDs)
 	cfg.AllowedChannelIDs = normalizeDiscordIDList(cfg.AllowedChannelIDs)
-	cfg.DefaultModel = strings.TrimSpace(cfg.DefaultModel)
 	cfg.DiscordApplicationID = strings.TrimSpace(cfg.DiscordApplicationID)
 	cfg.DiscordBotUserID = strings.TrimSpace(cfg.DiscordBotUserID)
 
@@ -202,6 +200,63 @@ func discordCommands() []discordbot.ApplicationCommand {
 		{
 			Name:        "new",
 			Description: "开启新会话",
+			Type:        int(discordgo.ChatApplicationCommand),
+		},
+		{
+			Name:        "model",
+			Description: "查看或切换模型",
+			Type:        int(discordgo.ChatApplicationCommand),
+			Options: []discordbot.ApplicationCommandOption{
+				{
+					Type:        int(discordgo.ApplicationCommandOptionString),
+					Name:        "name",
+					Description: "模型名称，不填则查看当前",
+					Required:    false,
+				},
+			},
+		},
+		{
+			Name:        "think",
+			Description: "查看或设置思考深度",
+			Type:        int(discordgo.ChatApplicationCommand),
+			Options: []discordbot.ApplicationCommandOption{
+				{
+					Type:        int(discordgo.ApplicationCommandOptionString),
+					Name:        "level",
+					Description: "思考深度",
+					Required:    false,
+					Choices: []discordbot.ApplicationCommandOptionChoice{
+						{Name: "off", Value: "off"},
+						{Name: "minimal", Value: "minimal"},
+						{Name: "low", Value: "low"},
+						{Name: "medium", Value: "medium"},
+						{Name: "high", Value: "high"},
+						{Name: "max", Value: "max"},
+					},
+				},
+			},
+		},
+		{
+			Name:        "heartbeat",
+			Description: "查看或切换心跳状态",
+			Type:        int(discordgo.ChatApplicationCommand),
+			Options: []discordbot.ApplicationCommandOption{
+				{
+					Type:        int(discordgo.ApplicationCommandOptionString),
+					Name:        "action",
+					Description: "操作",
+					Required:    false,
+					Choices: []discordbot.ApplicationCommandOptionChoice{
+						{Name: "status", Value: "status"},
+						{Name: "on", Value: "on"},
+						{Name: "off", Value: "off"},
+					},
+				},
+			},
+		},
+		{
+			Name:        "stop",
+			Description: "停止当前任务",
 			Type:        int(discordgo.ChatApplicationCommand),
 		},
 	}

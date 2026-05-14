@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useMemo, useState, forwardRef, useImperativeHandle, useLayoutEffect } from 'react'
 import { ArrowUp, Mic, X, Check, Loader2, Pencil } from 'lucide-react'
 import type { FormEvent, KeyboardEvent, ClipboardEvent as ReactClipboardEvent, ReactNode } from 'react'
-import { listSelectablePersonas, type SelectablePersona, type UploadedThreadAttachment } from '../api'
+import { type UploadedThreadAttachment } from '../api'
 import { useLocale } from '../contexts/LocaleContext'
 import { PastedContentModal } from './PastedContentModal'
 import type { SettingsTab } from './SettingsModal'
@@ -85,7 +85,6 @@ type Props = {
   planMode?: boolean
   onTogglePlanMode?: (currentMode: boolean) => Promise<void>
   learningModeEnabled?: boolean
-  learningModeUpdating?: boolean
   onToggleLearningMode?: (currentMode: boolean) => Promise<void>
 }
 
@@ -159,17 +158,6 @@ function nearestInlineTokenBoundary(value: string, cursor: number): number | nul
   if (!range || cursor === range.start || cursor === range.end) return null
   return cursor - range.start < range.end - cursor ? range.start : range.end
 }
-
-function buildFallbackSelectablePersonas(_selectedPersonaKey: string): SelectablePersona[] {
-  return []
-}
-
-function pickPreferredPersonaKey(personas: SelectablePersona[], preferred?: string): string {
-  if (preferred && personas.some((persona) => persona.persona_key === preferred)) return preferred
-  if (personas.some((persona) => persona.persona_key === DEFAULT_PERSONA_KEY)) return DEFAULT_PERSONA_KEY
-  return DEFAULT_PERSONA_KEY
-}
-
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -293,7 +281,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   planMode = false,
   onTogglePlanMode,
   learningModeEnabled = false,
-  learningModeUpdating = false,
   onToggleLearningMode,
 }, ref) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -334,12 +321,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const { t } = useLocale()
 
-  const [selectablePersonas, setSelectablePersonas] = useState<SelectablePersona[]>([])
   const [selectedPersonaKey, setSelectedPersonaKey] = useState(readSelectedPersonaKeyFromStorage)
   const [focused, setFocused] = useState(false)
+  const [childMenuOpen, setChildMenuOpen] = useState(false)
   const [collapsingGrid, setCollapsingGrid] = useState(false)
   const [pastedModalAttachment, setPastedModalAttachment] = useState<Attachment | null>(null)
-  const [chipExiting, setChipExiting] = useState(false)
   const [typewriterText, setTypewriterText] = useState('')
   const [workCompactInputWraps, setWorkCompactInputWraps] = useState(false)
   const [textareaFocusRestoreTick, setTextareaFocusRestoreTick] = useState(0)
@@ -392,47 +378,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     onPersonaChange?.(personaKey)
   }, [onPersonaChange])
 
-  useEffect(() => {
-    let cancelled = false
-
-    if (!accessToken) {
-      const clearId = requestAnimationFrame(() => setSelectablePersonas([]))
-      return () => {
-        cancelled = true
-        cancelAnimationFrame(clearId)
-      }
-    }
-
-    void listSelectablePersonas(accessToken)
-      .then((personas) => {
-        if (cancelled) return
-        setSelectablePersonas(personas)
-        if (personas.length === 0) return
-
-        const preferredKey = readSelectedPersonaKeyFromStorage()
-        const nextKey = pickPreferredPersonaKey(personas, preferredKey)
-        if (nextKey !== preferredKey) persistSelectedPersona(nextKey)
-      })
-      .catch(() => {
-        if (cancelled) return
-        setSelectablePersonas([])
-      })
-
-    return () => { cancelled = true }
-  }, [accessToken, persistSelectedPersona])
-
-  const personas = useMemo(
-    () => selectablePersonas.length > 0
-      ? selectablePersonas
-      : buildFallbackSelectablePersonas(selectedPersonaKey),
-    [selectablePersonas, selectedPersonaKey],
-  )
-
-  const selectedPersona = useMemo(
-    () => personas.find((persona) => persona.persona_key === selectedPersonaKey) ?? null,
-    [personas, selectedPersonaKey],
-  )
-
   const handleModelChange = useCallback((model: string | null) => {
     setSelectedModel(model)
     writeSelectedModelToStorage(model)
@@ -454,16 +399,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [workThreadId])
 
   const handleMenuOpenChange = useCallback((open: boolean) => {
+    setChildMenuOpen(open)
     const el = textareaRef.current
     if (!el) return
     if (open) {
       el.blur()
-    } else {
-      el.focus()
     }
   }, [])
 
-  const isNonDefaultMode = selectedPersonaKey !== DEFAULT_PERSONA_KEY && selectedPersonaKey !== WORK_PERSONA_KEY
   const showSendButton = draft.trim().length > 0 || attachments.length > 0
   const resolvedPlaceholder = typewriterText
   const isWelcomeInput = variant === 'welcome'
@@ -800,22 +743,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     }
     setSlashSelectedIndex((index) => Math.min(index, slashVisibleItems.length - 1))
   }, [slashOpen, slashVisibleItems.length])
-
-  const deactivateMode = useCallback(() => {
-    setChipExiting(true)
-    setTimeout(() => {
-      persistSelectedPersona(DEFAULT_PERSONA_KEY)
-      setChipExiting(false)
-    }, 120)
-  }, [persistSelectedPersona])
-
-  const handleModeSelect = useCallback((personaKey: string) => {
-    if (selectedPersonaKey === personaKey && !chipExiting) {
-      deactivateMode()
-    } else {
-      persistSelectedPersona(personaKey)
-    }
-  }, [selectedPersonaKey, chipExiting, persistSelectedPersona, deactivateMode])
 
   const formatRecordingTime = (secs: number) => {
     const m = Math.floor(secs / 60)
@@ -1258,16 +1185,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       <div
         className={[
           'bg-[var(--c-bg-input)] chat-input-box',
-          focused && 'is-focused',
+          (focused || childMenuOpen) && 'is-focused',
         ].filter(Boolean).join(' ')}
         style={{
           borderWidth: '0.5px',
           borderStyle: 'solid',
-          borderColor: focused
+          borderColor: (focused || childMenuOpen)
             ? 'var(--c-input-border-color-focus)'
             : 'var(--c-input-border-color)',
           borderRadius: isWorkChat ? (isWorkCompactInput ? '12px' : '16px') : '20px',
-          boxShadow: focused
+          boxShadow: (focused || childMenuOpen)
             ? 'var(--c-input-shadow-focus)'
             : 'var(--c-input-shadow)',
           transition: isWorkChat
@@ -1346,59 +1273,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           padding: formPadding,
         }}
       >
-        {!isWorkCompactInput && (
-          <div
-            onMouseEnter={() => setSetupTextHovered(true)}
-            onMouseLeave={() => setSetupTextHovered(false)}
-            style={{
-              position: 'relative',
-              marginBottom: textareaWrapperMarginBottom,
-              ...(isWorkExpandedInput
-                ? { marginLeft: '3.5px', padding: '10px 0 0' }
-                : {}),
-            }}
-          >
-            {shouldHighlightSetupCommand && (
-              <div aria-hidden="true" style={setupHighlightStyle}>
-                {renderSetupHighlightedText()}
-              </div>
-            )}
-            <AutoResizeTextarea
-              ref={textareaRef}
-              rows={1}
-              className="w-full resize-none bg-transparent outline-none placeholder:text-[var(--c-placeholder)] placeholder:font-[360] disabled:cursor-not-allowed"
-              value={draft}
-              onChange={(e) => handleDraftChange(e.currentTarget)}
-              onKeyDown={handleKeyDown}
-              onKeyUp={(e) => handleTextareaCursorChange(e.currentTarget)}
-              onClick={(e) => handleTextareaCursorChange(e.currentTarget)}
-              onCompositionStart={handleCompositionStart}
-              onCompositionEnd={(e) => handleCompositionEnd(e.currentTarget)}
-              onPaste={handleTextareaPaste}
-              onFocus={handleTextareaFocus}
-              onBlur={handleTextareaBlur}
-              placeholder={resolvedPlaceholder}
-              disabled={disabled}
-              minRows={1}
-              maxHeight={300}
-              style={{
-                fontFamily: 'inherit',
-                fontSize: '16px',
-                fontWeight: 310,
-                ...(variant === 'chat' ? { lineHeight: 1.45 as const } : {}),
-                color: shouldHighlightSetupCommand ? 'transparent' : 'var(--c-text-primary)',
-                caretColor: 'var(--c-text-primary)',
-                marginTop: '0px',
-                marginBottom: '0px',
-                position: 'relative',
-                zIndex: 2,
-                ...(isWorkExpandedInput ? { display: 'block', padding: 0, border: 'none' } : {}),
-                letterSpacing: '-0.16px',
-              }}
-            />
-          </div>
-        )}
-
         <div
           className="flex items-center"
           style={{
@@ -1406,16 +1280,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             minHeight: isWorkChat ? '34.5px' : '32px',
             width: '100%',
             minWidth: 0,
+            flexWrap: isWorkCompactInput ? 'nowrap' : 'wrap',
           }}
         >
           <PersonaModelBar
-            personas={personas}
-            selectedPersonaKey={selectedPersonaKey}
             selectedModel={selectedModel}
-            isNonDefaultMode={isNonDefaultMode}
-            selectedPersona={selectedPersona}
-            onModeSelect={handleModeSelect}
-            onDeactivateMode={deactivateMode}
             onModelChange={handleModelChange}
             thinkingEnabled={reasoningMode}
             onThinkingChange={handleReasoningModeChange}
@@ -1433,7 +1302,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             planMode={planMode}
             onTogglePlanMode={onTogglePlanMode}
             learningModeEnabled={learningModeEnabled}
-            learningModeUpdating={learningModeUpdating}
             onToggleLearningMode={onToggleLearningMode}
           />
 
@@ -1480,75 +1348,84 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           )}
 
-          {isWorkCompactInput && (
-            <>
-              <div
-                onMouseEnter={() => setSetupTextHovered(true)}
-                onMouseLeave={() => setSetupTextHovered(false)}
-                style={{
-                  flex: '1 1 auto',
-                  minWidth: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  position: 'relative',
-                  padding: '0 8px 0 4px',
-                }}
-              >
-                {shouldHighlightSetupCommand && (
-                  <div aria-hidden="true" style={setupHighlightStyle}>
-                    {renderSetupHighlightedText()}
-                  </div>
-                )}
-                <AutoResizeTextarea
-                  ref={textareaRef}
-                  rows={1}
-                  className="w-full resize-none bg-transparent outline-none placeholder:text-[var(--c-placeholder)] placeholder:font-[360] disabled:cursor-not-allowed"
-                  value={draft}
-                  onChange={(e) => handleDraftChange(e.currentTarget)}
-                  onKeyDown={handleKeyDown}
-                  onKeyUp={(e) => handleTextareaCursorChange(e.currentTarget)}
-                  onClick={(e) => handleTextareaCursorChange(e.currentTarget)}
-                  onCompositionStart={handleCompositionStart}
-                  onCompositionEnd={(e) => handleCompositionEnd(e.currentTarget)}
-                  onPaste={handleTextareaPaste}
-                  onFocus={handleTextareaFocus}
-                  onBlur={handleTextareaBlur}
-                  placeholder={resolvedPlaceholder}
-                  disabled={disabled}
-                  minRows={1}
-                  maxHeight={300}
-                  style={{
-                    display: 'block',
-                    fontFamily: 'inherit',
-                    fontSize: '16px',
-                    fontWeight: 310,
-                    lineHeight: 1.45 as const,
-                    color: shouldHighlightSetupCommand ? 'transparent' : 'var(--c-text-primary)',
-                    caretColor: 'var(--c-text-primary)',
-                    marginTop: '0px',
-                    marginBottom: '0px',
-                    padding: 0,
-                    border: 'none',
+          <div
+            onMouseEnter={() => setSetupTextHovered(true)}
+            onMouseLeave={() => setSetupTextHovered(false)}
+            style={{
+              position: 'relative',
+              minWidth: 0,
+              ...(isWorkCompactInput
+                ? {
                     flex: '1 1 auto',
-                    minWidth: 0,
-                    position: 'relative',
-                    zIndex: 2,
-                    letterSpacing: '-0.16px',
-                  }}
-                />
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0 8px 0 4px',
+                  }
+                : {
+                    order: -1,
+                    flex: '0 0 100%',
+                    width: '100%',
+                    marginBottom: textareaWrapperMarginBottom,
+                    ...(isWorkExpandedInput
+                      ? { marginLeft: '3.5px', padding: '10px 0 0' }
+                      : {}),
+                  }),
+            }}
+          >
+            {shouldHighlightSetupCommand && (
+              <div aria-hidden="true" style={setupHighlightStyle}>
+                {renderSetupHighlightedText()}
               </div>
-              <div style={{ flexShrink: 0, marginRight: '4px', display: 'flex', alignItems: 'center', position: 'relative' }}>
-                <ModelPicker
-                  accessToken={accessToken}
-                  value={selectedModel}
-                  onChange={handleModelChange}
-                  onAddModel={() => onOpenSettings?.('models')}
-                  variant={variant}
-                  thinkingEnabled={reasoningMode}
-                  onThinkingChange={handleReasoningModeChange}
-                />
-              </div>
-            </>
+            )}
+            <AutoResizeTextarea
+              ref={textareaRef}
+              rows={1}
+              className="w-full resize-none bg-transparent outline-none placeholder:text-[var(--c-placeholder)] placeholder:font-[360] disabled:cursor-not-allowed"
+              value={draft}
+              onChange={(e) => handleDraftChange(e.currentTarget)}
+              onKeyDown={handleKeyDown}
+              onKeyUp={(e) => handleTextareaCursorChange(e.currentTarget)}
+              onClick={(e) => handleTextareaCursorChange(e.currentTarget)}
+              onCompositionStart={handleCompositionStart}
+              onCompositionEnd={(e) => handleCompositionEnd(e.currentTarget)}
+              onPaste={handleTextareaPaste}
+              onFocus={handleTextareaFocus}
+              onBlur={handleTextareaBlur}
+              placeholder={resolvedPlaceholder}
+              disabled={disabled}
+              minRows={1}
+              maxHeight={300}
+              style={{
+                fontFamily: 'inherit',
+                fontSize: '16px',
+                fontWeight: 310,
+                ...(variant === 'chat' ? { lineHeight: 1.45 as const } : {}),
+                color: shouldHighlightSetupCommand ? 'transparent' : 'var(--c-text-primary)',
+                caretColor: 'var(--c-text-primary)',
+                marginTop: '0px',
+                marginBottom: '0px',
+                position: 'relative',
+                zIndex: 2,
+                ...(isWorkChat ? { display: 'block', padding: 0, border: 'none' } : {}),
+                ...(isWorkCompactInput ? { flex: '1 1 auto', minWidth: 0 } : {}),
+                letterSpacing: '-0.16px',
+              }}
+            />
+          </div>
+
+          {isWorkCompactInput && (
+            <div style={{ flexShrink: 0, marginRight: '4px', display: 'flex', alignItems: 'center', position: 'relative' }}>
+              <ModelPicker
+                accessToken={accessToken}
+                value={selectedModel}
+                onChange={handleModelChange}
+                onAddModel={() => onOpenSettings?.('models')}
+                variant={variant}
+                thinkingEnabled={reasoningMode}
+                onThinkingChange={handleReasoningModeChange}
+                onOpenChange={handleMenuOpenChange}
+              />
+            </div>
           )}
 
           {/* mic + send 共用同一位置，disabled 时显示 spinner */}

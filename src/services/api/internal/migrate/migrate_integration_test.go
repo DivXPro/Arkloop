@@ -532,6 +532,385 @@ func TestUpgradeChannelHeartbeatScopeMigrationDedupesGroupPersonaHistory(t *test
 	}
 }
 
+func TestMigrateLegacyGroupHeartbeatThreads(t *testing.T) {
+	db := testutil.SetupPostgresDatabase(t, "migrate_legacy_group_heartbeat_threads")
+	ctx := context.Background()
+
+	sqlDB, err := openDB(db.DSN)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	for _, stmt := range []string{
+		`CREATE TABLE goose_db_version (
+			id SERIAL PRIMARY KEY,
+			version_id BIGINT NOT NULL,
+			is_applied BOOLEAN NOT NULL,
+			tstamp TIMESTAMP DEFAULT now()
+		)`,
+		`CREATE TABLE personas (
+			id UUID PRIMARY KEY,
+			account_id UUID NOT NULL,
+			persona_key TEXT NOT NULL,
+			deleted_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE channel_identities (
+			id UUID PRIMARY KEY,
+			channel_type TEXT NOT NULL,
+			platform_subject_id TEXT NOT NULL
+		)`,
+		`CREATE TABLE channels (
+			id UUID PRIMARY KEY,
+			account_id UUID NOT NULL
+		)`,
+		`CREATE TABLE threads (
+			id UUID PRIMARY KEY,
+			account_id UUID NOT NULL,
+			deleted_at TIMESTAMPTZ
+		)`,
+		`CREATE TABLE channel_group_threads (
+			id UUID PRIMARY KEY,
+			channel_id UUID NOT NULL,
+			platform_chat_id TEXT NOT NULL,
+			persona_id UUID NOT NULL,
+			thread_id UUID NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE scheduled_triggers (
+			id UUID PRIMARY KEY,
+			channel_id UUID NOT NULL,
+			channel_identity_id UUID NOT NULL,
+			thread_id UUID,
+			persona_key TEXT NOT NULL,
+			account_id UUID NOT NULL,
+			model TEXT NOT NULL DEFAULT '',
+			interval_min INT NOT NULL DEFAULT 30,
+			next_fire_at TIMESTAMPTZ NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			trigger_kind TEXT NOT NULL DEFAULT 'heartbeat',
+			job_id UUID,
+			cooldown_level INT NOT NULL DEFAULT 0,
+			last_user_msg_at TIMESTAMPTZ,
+			burst_start_at TIMESTAMPTZ
+		)`,
+		`CREATE UNIQUE INDEX scheduled_triggers_thread_target_idx
+			ON scheduled_triggers (thread_id)
+			WHERE thread_id IS NOT NULL`,
+		`CREATE UNIQUE INDEX scheduled_triggers_identity_target_idx
+			ON scheduled_triggers (channel_id, channel_identity_id)
+			WHERE thread_id IS NULL`,
+	} {
+		if _, err := sqlDB.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("prepare schema: %v", err)
+		}
+	}
+	for v := int64(0); v <= 194; v++ {
+		if _, err := sqlDB.ExecContext(ctx, `INSERT INTO goose_db_version (version_id, is_applied) VALUES ($1, true)`, v); err != nil {
+			t.Fatalf("seed goose version %d: %v", v, err)
+		}
+	}
+
+	accountID := uuid.New()
+	personaID := uuid.New()
+	channelID := uuid.New()
+	legacyIdentityID := uuid.New()
+	conflictIdentityID := uuid.New()
+	legacyTriggerID := uuid.New()
+	conflictLegacyTriggerID := uuid.New()
+	threadTriggerID := uuid.New()
+	threadID := uuid.New()
+	conflictThreadID := uuid.New()
+	now := time.Now().UTC()
+
+	if _, err := sqlDB.ExecContext(ctx, `
+		INSERT INTO personas (id, account_id, persona_key, deleted_at, created_at)
+		VALUES ($1, $2, 'group-persona', NULL, $11);
+		INSERT INTO channels (id, account_id) VALUES ($3, $2);
+		INSERT INTO channel_identities (id, channel_type, platform_subject_id)
+		VALUES
+			($4, 'telegram', 'chat-migrate'),
+			($5, 'telegram', 'chat-conflict');
+		INSERT INTO threads (id, account_id, deleted_at)
+		VALUES ($6, $2, NULL), ($7, $2, NULL);
+		INSERT INTO channel_group_threads (id, channel_id, platform_chat_id, persona_id, thread_id, created_at, updated_at)
+		VALUES
+			(gen_random_uuid(), $3, 'chat-migrate', $1, $6, $11, $11),
+			(gen_random_uuid(), $3, 'chat-conflict', $1, $7, $11, $11);
+		INSERT INTO scheduled_triggers (
+			id, channel_id, channel_identity_id, thread_id, persona_key, account_id, model,
+			interval_min, next_fire_at, created_at, updated_at, trigger_kind, cooldown_level
+		) VALUES
+			($8, $3, $4, NULL, 'group-persona', $2, 'legacy-model', 9, $11, $11, $11, 'heartbeat', 2),
+			($9, $3, $5, NULL, 'group-persona', $2, 'legacy-conflict', 9, $11, $11, $11, 'heartbeat', 0),
+			($10, $3, $5, $7, 'group-persona', $2, 'thread-conflict', 9, $11, $11, $11, 'heartbeat', 1);`,
+		personaID,
+		accountID,
+		channelID,
+		legacyIdentityID,
+		conflictIdentityID,
+		threadID,
+		conflictThreadID,
+		legacyTriggerID,
+		conflictLegacyTriggerID,
+		threadTriggerID,
+		now,
+	); err != nil {
+		t.Fatalf("seed legacy heartbeat data: %v", err)
+	}
+
+	if _, err := Up(ctx, db.DSN); err != nil {
+		t.Fatalf("upgrade migrations: %v", err)
+	}
+
+	var migratedThreadID uuid.UUID
+	var migratedCooldown int
+	if err := sqlDB.QueryRowContext(ctx, `
+		SELECT thread_id, cooldown_level
+		  FROM scheduled_triggers
+		 WHERE id = $1`,
+		legacyTriggerID,
+	).Scan(&migratedThreadID, &migratedCooldown); err != nil {
+		t.Fatalf("read migrated legacy trigger: %v", err)
+	}
+	if migratedThreadID != threadID || migratedCooldown != 2 {
+		t.Fatalf("unexpected migrated trigger: thread_id=%s cooldown=%d", migratedThreadID, migratedCooldown)
+	}
+
+	var legacyConflictCount int
+	if err := sqlDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		  FROM scheduled_triggers
+		 WHERE id = $1`,
+		conflictLegacyTriggerID,
+	).Scan(&legacyConflictCount); err != nil {
+		t.Fatalf("count conflict legacy trigger: %v", err)
+	}
+	if legacyConflictCount != 0 {
+		t.Fatalf("expected conflicting legacy trigger to be deleted, got %d", legacyConflictCount)
+	}
+
+	var keptThreadModel string
+	if err := sqlDB.QueryRowContext(ctx, `
+		SELECT model
+		  FROM scheduled_triggers
+		 WHERE id = $1`,
+		threadTriggerID,
+	).Scan(&keptThreadModel); err != nil {
+		t.Fatalf("read kept thread trigger: %v", err)
+	}
+	if keptThreadModel != "thread-conflict" {
+		t.Fatalf("thread trigger model = %q, want thread-conflict", keptThreadModel)
+	}
+}
+
+func TestMigrateThreadCentricModel(t *testing.T) {
+	db := testutil.SetupPostgresDatabase(t, "migrate_thread_centric_model")
+	ctx := context.Background()
+
+	sqlDB, err := openDB(db.DSN)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	for _, stmt := range []string{
+		`CREATE TABLE goose_db_version (
+			id SERIAL PRIMARY KEY,
+			version_id BIGINT NOT NULL,
+			is_applied BOOLEAN NOT NULL,
+			tstamp TIMESTAMP DEFAULT now()
+		)`,
+		`CREATE TABLE channels (
+			id UUID PRIMARY KEY,
+			config_json JSONB NOT NULL DEFAULT '{}'::jsonb
+		)`,
+		`CREATE TABLE threads (
+			id UUID PRIMARY KEY,
+			config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+			deleted_at TIMESTAMPTZ
+		)`,
+		`CREATE TABLE channel_group_threads (
+			channel_id UUID NOT NULL,
+			thread_id UUID NOT NULL
+		)`,
+		`CREATE TABLE channel_dm_threads (
+			channel_id UUID NOT NULL,
+			thread_id UUID NOT NULL
+		)`,
+		`CREATE TABLE channel_identities (
+			id UUID PRIMARY KEY,
+			heartbeat_enabled INTEGER NOT NULL DEFAULT 0,
+			heartbeat_interval_minutes INTEGER NOT NULL DEFAULT 30,
+			heartbeat_model TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE channel_identity_links (
+			channel_id UUID NOT NULL,
+			channel_identity_id UUID NOT NULL,
+			heartbeat_enabled INTEGER NOT NULL DEFAULT 0,
+			heartbeat_interval_minutes INTEGER NOT NULL DEFAULT 30,
+			heartbeat_model TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE scheduled_triggers (
+			id UUID PRIMARY KEY,
+			channel_id UUID,
+			channel_identity_id UUID,
+			thread_id UUID,
+			trigger_kind TEXT NOT NULL DEFAULT 'heartbeat',
+			model TEXT NOT NULL DEFAULT ''
+		)`,
+	} {
+		if _, err := sqlDB.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("prepare schema: %v", err)
+		}
+	}
+	for v := int64(0); v <= 195; v++ {
+		if _, err := sqlDB.ExecContext(ctx, `INSERT INTO goose_db_version (version_id, is_applied) VALUES ($1, true)`, v); err != nil {
+			t.Fatalf("seed goose version %d: %v", v, err)
+		}
+	}
+
+	channelID := uuid.New()
+	renamedThreadID := uuid.New()
+	groupThreadID := uuid.New()
+	dmThreadID := uuid.New()
+	existingThreadID := uuid.New()
+	deletedThreadID := uuid.New()
+	runtimeTriggerID := uuid.New()
+	legacyTriggerID := uuid.New()
+	clearSnapshotThreadID := uuid.New()
+	clearSnapshotTriggerID := uuid.New()
+	groupIdentityID := uuid.New()
+	clearIdentityID := uuid.New()
+	linkIdentityID := uuid.New()
+	if _, err := sqlDB.ExecContext(ctx, `
+		INSERT INTO channels (id, config_json)
+		VALUES ($1, '{"default_model":"channel-model"}'::jsonb);
+		INSERT INTO channel_identities (id, heartbeat_enabled, heartbeat_interval_minutes, heartbeat_model)
+		VALUES
+			($9, 1, 11, 'group-heartbeat-model'),
+			($10, 0, 30, ''),
+			($11, 1, 17, 'identity-model-overridden-by-link');
+		INSERT INTO channel_identity_links (channel_id, channel_identity_id, heartbeat_enabled, heartbeat_interval_minutes, heartbeat_model)
+		VALUES ($1, $11, 1, 19, 'link-heartbeat-model');
+		INSERT INTO threads (id, config_json, deleted_at)
+		VALUES
+			($2, '{"default_model":"old-model","reasoning_mode":"high"}'::jsonb, NULL),
+			($3, '{}'::jsonb, NULL),
+			($4, '{}'::jsonb, NULL),
+			($5, '{"chat_model":"keep-model"}'::jsonb, NULL),
+			($6, '{}'::jsonb, now()),
+			($12, '{}'::jsonb, NULL);
+		INSERT INTO channel_group_threads (channel_id, thread_id)
+		VALUES ($1, $3), ($1, $5), ($1, $6), ($1, $12);
+		INSERT INTO channel_dm_threads (channel_id, thread_id)
+		VALUES ($1, $4);
+		INSERT INTO scheduled_triggers (id, channel_id, channel_identity_id, thread_id, trigger_kind, model)
+		VALUES
+			($7, $1, $9, $3, 'heartbeat', 'snapshot-model'),
+			($8, $1, $9, NULL, 'heartbeat', 'legacy-model'),
+			($13, $1, $10, $12, 'heartbeat', 'stale-channel-snapshot'),
+			($14, $1, $11, $4, 'heartbeat', 'dm-snapshot');`,
+		channelID,
+		renamedThreadID,
+		groupThreadID,
+		dmThreadID,
+		existingThreadID,
+		deletedThreadID,
+		runtimeTriggerID,
+		legacyTriggerID,
+		groupIdentityID,
+		clearIdentityID,
+		linkIdentityID,
+		clearSnapshotThreadID,
+		clearSnapshotTriggerID,
+		uuid.New(),
+	); err != nil {
+		t.Fatalf("seed thread model data: %v", err)
+	}
+
+	if _, err := Up(ctx, db.DSN); err != nil {
+		t.Fatalf("upgrade migrations: %v", err)
+	}
+
+	assertThreadConfig := func(threadID uuid.UUID, wantModel string, wantDefaultKey bool) {
+		t.Helper()
+		var chatModel string
+		var hasDefault bool
+		if err := sqlDB.QueryRowContext(ctx, `
+			SELECT COALESCE(config_json->>'chat_model', ''), config_json ? 'default_model'
+			  FROM threads
+			 WHERE id = $1`,
+			threadID,
+		).Scan(&chatModel, &hasDefault); err != nil {
+			t.Fatalf("read thread config: %v", err)
+		}
+		if chatModel != wantModel || hasDefault != wantDefaultKey {
+			t.Fatalf("thread %s config: chat_model=%q has_default=%v", threadID, chatModel, hasDefault)
+		}
+	}
+	assertThreadConfig(renamedThreadID, "old-model", false)
+	assertThreadConfig(groupThreadID, "channel-model", false)
+	assertThreadConfig(dmThreadID, "channel-model", false)
+	assertThreadConfig(existingThreadID, "keep-model", false)
+	assertThreadConfig(deletedThreadID, "", false)
+	assertThreadConfig(clearSnapshotThreadID, "channel-model", false)
+
+	var groupHeartbeatModel string
+	var groupHeartbeatEnabled bool
+	var groupHeartbeatInterval int
+	if err := sqlDB.QueryRowContext(ctx, `
+		SELECT COALESCE(config_json->>'heartbeat_model', ''),
+		       COALESCE((config_json->>'heartbeat_enabled')::boolean, false),
+		       COALESCE((config_json->>'heartbeat_interval_minutes')::int, 0)
+		  FROM threads
+		 WHERE id = $1`,
+		groupThreadID,
+	).Scan(&groupHeartbeatModel, &groupHeartbeatEnabled, &groupHeartbeatInterval); err != nil {
+		t.Fatalf("read group heartbeat config: %v", err)
+	}
+	if groupHeartbeatModel != "group-heartbeat-model" || !groupHeartbeatEnabled || groupHeartbeatInterval != 11 {
+		t.Fatalf("unexpected group heartbeat config: model=%q enabled=%v interval=%d", groupHeartbeatModel, groupHeartbeatEnabled, groupHeartbeatInterval)
+	}
+
+	var dmHeartbeatModel string
+	if err := sqlDB.QueryRowContext(ctx, `SELECT COALESCE(config_json->>'heartbeat_model', '') FROM threads WHERE id = $1`, dmThreadID).Scan(&dmHeartbeatModel); err != nil {
+		t.Fatalf("read dm heartbeat config: %v", err)
+	}
+	if dmHeartbeatModel != "link-heartbeat-model" {
+		t.Fatalf("unexpected dm heartbeat model: %q", dmHeartbeatModel)
+	}
+
+	var runtimeResolve, legacyResolve bool
+	if err := sqlDB.QueryRowContext(ctx, `SELECT resolve_model_at_runtime FROM scheduled_triggers WHERE id = $1`, runtimeTriggerID).Scan(&runtimeResolve); err != nil {
+		t.Fatalf("read runtime trigger: %v", err)
+	}
+	if err := sqlDB.QueryRowContext(ctx, `SELECT resolve_model_at_runtime FROM scheduled_triggers WHERE id = $1`, legacyTriggerID).Scan(&legacyResolve); err != nil {
+		t.Fatalf("read legacy trigger: %v", err)
+	}
+	if runtimeResolve || legacyResolve {
+		t.Fatalf("unexpected resolve flags: runtime=%v legacy=%v", runtimeResolve, legacyResolve)
+	}
+	var runtimeModel string
+	if err := sqlDB.QueryRowContext(ctx, `SELECT model FROM scheduled_triggers WHERE id = $1`, runtimeTriggerID).Scan(&runtimeModel); err != nil {
+		t.Fatalf("read runtime trigger model: %v", err)
+	}
+	if runtimeModel != "group-heartbeat-model" {
+		t.Fatalf("unexpected runtime trigger model: %q", runtimeModel)
+	}
+	var clearResolve bool
+	var clearModel string
+	if err := sqlDB.QueryRowContext(ctx, `SELECT resolve_model_at_runtime, model FROM scheduled_triggers WHERE id = $1`, clearSnapshotTriggerID).Scan(&clearResolve, &clearModel); err != nil {
+		t.Fatalf("read cleared trigger: %v", err)
+	}
+	if !clearResolve || clearModel != "" {
+		t.Fatalf("expected cleared runtime trigger, resolve=%v model=%q", clearResolve, clearModel)
+	}
+}
+
 func TestReasoningIterationsBudgetMigration(t *testing.T) {
 	db := testutil.SetupPostgresDatabase(t, "migrate_reasoning_budget")
 	ctx := context.Background()
@@ -827,6 +1206,99 @@ func TestWebSearchBasicProviderMigration(t *testing.T) {
 	}
 	assertToolProviderCount(t, sqlDB, ctx, "web_search.basic", 0)
 	assertToolProviderCount(t, sqlDB, ctx, "web_search.duckduckgo", 3)
+}
+
+func TestDefaultWebSearchExaMigration(t *testing.T) {
+	db := testutil.SetupPostgresDatabase(t, "migrate_default_web_search_exa")
+	ctx := context.Background()
+
+	sqlDB, err := openDB(db.DSN)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	provider, err := newProvider(sqlDB)
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	if _, err := provider.UpTo(ctx, 190); err != nil {
+		t.Fatalf("up to 190: %v", err)
+	}
+
+	result, err := provider.UpByOne(ctx)
+	if err != nil {
+		t.Fatalf("apply 191: %v", err)
+	}
+	if result == nil || result.Source == nil || result.Source.Version != 191 {
+		t.Fatalf("expected migration 191, got %#v", result)
+	}
+
+	var providerName string
+	var active bool
+	if err := sqlDB.QueryRowContext(ctx, `
+		SELECT provider_name, is_active
+		FROM tool_provider_configs
+		WHERE owner_kind = 'platform' AND group_name = 'web_search'
+	`).Scan(&providerName, &active); err != nil {
+		t.Fatalf("select default provider: %v", err)
+	}
+	if providerName != "web_search.exa" || !active {
+		t.Fatalf("default provider = %s active=%v", providerName, active)
+	}
+
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatalf("down 191: %v", err)
+	}
+	assertToolProviderCount(t, sqlDB, ctx, "web_search.exa", 0)
+}
+
+func TestDefaultWebSearchExaMigrationKeepsExistingActiveProvider(t *testing.T) {
+	db := testutil.SetupPostgresDatabase(t, "migrate_default_web_search_existing")
+	ctx := context.Background()
+
+	sqlDB, err := openDB(db.DSN)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	provider, err := newProvider(sqlDB)
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	if _, err := provider.UpTo(ctx, 190); err != nil {
+		t.Fatalf("up to 190: %v", err)
+	}
+
+	if _, err := sqlDB.ExecContext(ctx, `
+		INSERT INTO tool_provider_configs (
+			account_id, owner_kind, owner_user_id, group_name, provider_name, is_active, config_json
+		) VALUES (NULL, 'platform', NULL, 'web_search', 'web_search.tavily', TRUE, '{}'::jsonb)
+	`); err != nil {
+		t.Fatalf("insert active tavily: %v", err)
+	}
+
+	result, err := provider.UpByOne(ctx)
+	if err != nil {
+		t.Fatalf("apply 191: %v", err)
+	}
+	if result == nil || result.Source == nil || result.Source.Version != 191 {
+		t.Fatalf("expected migration 191, got %#v", result)
+	}
+
+	var providerName string
+	if err := sqlDB.QueryRowContext(ctx, `
+		SELECT provider_name
+		FROM tool_provider_configs
+		WHERE owner_kind = 'platform' AND group_name = 'web_search' AND is_active = TRUE
+	`).Scan(&providerName); err != nil {
+		t.Fatalf("select active provider: %v", err)
+	}
+	if providerName != "web_search.tavily" {
+		t.Fatalf("active provider = %q", providerName)
+	}
+	assertToolProviderCount(t, sqlDB, ctx, "web_search.exa", 0)
 }
 
 func assertToolProviderCount(t *testing.T, db *sql.DB, ctx context.Context, providerName string, want int) {

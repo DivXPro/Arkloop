@@ -25,7 +25,6 @@ type qqbotChannelConfig struct {
 	AppID           string   `json:"app_id"`
 	AllowedUserIDs  []string `json:"allowed_user_ids,omitempty"`
 	AllowedGroupIDs []string `json:"allowed_group_ids,omitempty"`
-	DefaultModel    string   `json:"default_model,omitempty"`
 }
 
 func normalizeQQBotChannelConfig(raw json.RawMessage) (json.RawMessage, qqbotChannelConfig, error) {
@@ -37,7 +36,6 @@ func normalizeQQBotChannelConfig(raw json.RawMessage) (json.RawMessage, qqbotCha
 		return nil, qqbotChannelConfig{}, fmt.Errorf("config_json must be a valid JSON object")
 	}
 	cfg.AppID = strings.TrimSpace(cfg.AppID)
-	cfg.DefaultModel = strings.TrimSpace(cfg.DefaultModel)
 	cfg.AllowedUserIDs = normalizeQQBotIDList(cfg.AllowedUserIDs)
 	cfg.AllowedGroupIDs = normalizeQQBotIDList(cfg.AllowedGroupIDs)
 	if cfg.AppID == "" {
@@ -402,7 +400,49 @@ func (c qqbotConnector) HandleMessage(ctx context.Context, traceID string, ch da
 		}
 	}
 
-	handled, replyText, err := c.handleCommand(ctx, tx, &ch, identity, text)
+	persona, personaRef, err := c.resolvePersona(ctx, ch)
+	if err != nil {
+		return err
+	}
+
+	handled, replyText, _, _, cancelRunID, err := DispatchChannelCommand(
+		ctx, tx, ch, *persona, identity,
+		text, conversationType == "private", platformChatID,
+		nil,
+		ChannelCommandResolver{
+			ResolveThreadID: func(ctx context.Context, tx pgx.Tx, personaID, projectID uuid.UUID, isPrivate bool, chatID string) (uuid.UUID, error) {
+				return c.resolveThreadID(ctx, tx, ch, personaID, projectID, identity, isPrivate, chatID, displayName)
+			},
+			ResolveHeartbeatIdentity: func(ctx context.Context, tx pgx.Tx) (*data.ChannelIdentity, error) {
+				if conversationType == "group" {
+					gi, err := c.channelIdentitiesRepo.WithTx(tx).Upsert(ctx, "qqbot", platformChatID, nil, nil, nil)
+					if err != nil {
+						return nil, err
+					}
+					return &gi, nil
+				}
+				return nil, nil
+			},
+			BindCode: func() string {
+				parts := strings.Fields(text)
+				if len(parts) >= 2 && parts[0] == "/bind" {
+					return parts[1]
+				}
+				return ""
+			},
+		},
+		ChannelCommandDeps{
+			ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+			ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+			ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+			PersonasRepo:             c.personasRepo,
+			RunEventRepo:             c.runEventRepo,
+			ChannelBindCodesRepo:     c.channelBindCodesRepo,
+			ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+			ThreadRepo:               c.threadRepo,
+		},
+		"QQBot",
+	)
 	if err != nil {
 		return err
 	}
@@ -410,17 +450,17 @@ func (c qqbotConnector) HandleMessage(ctx context.Context, traceID string, ch da
 		if err := tx.Commit(ctx); err != nil {
 			return err
 		}
+		if cancelRunID != uuid.Nil {
+			_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
+		}
 		replyScope := qqbotclient.ScopeC2C
 		if conversationType == "group" {
 			replyScope = qqbotclient.ScopeGroup
 		}
-		c.sendTextReply(ctx, replyScope, platformChatID, replyText, messageID)
+		if replyText != "" {
+			c.sendTextReply(ctx, replyScope, platformChatID, replyText, messageID)
+		}
 		return nil
-	}
-
-	persona, personaRef, err := c.resolvePersona(ctx, ch)
-	if err != nil {
-		return err
 	}
 
 	threadProjectID := derefUUID(persona.ProjectID)
@@ -434,6 +474,9 @@ func (c qqbotConnector) HandleMessage(ctx context.Context, traceID string, ch da
 	}
 	threadID, err := c.resolveThreadID(ctx, tx, ch, persona.ID, threadProjectID, identity, conversationType == "private", platformChatID, displayName)
 	if err != nil {
+		return err
+	}
+	if err := ensureInboundThreadChatModel(ctx, tx, ch.AccountID, threadID, extractChannelDefaultModel(ch)); err != nil {
 		return err
 	}
 
@@ -493,7 +536,7 @@ func (c qqbotConnector) HandleMessage(ctx context.Context, traceID string, ch da
 		return tx.Commit(ctx)
 	}
 	deliveryPayload := buildQQBotChannelDeliveryPayload(ch.ID, identity.ID, platformChatID, messageID, conversationType)
-	runData := buildChannelRunStartedData(personaRef, cfg.DefaultModel, "", deliveryPayload)
+	runData := buildChannelRunStartedData(personaRef, "", deliveryPayload)
 	run, _, err := runRepoTx.CreateRunWithStartedEvent(ctx, ch.AccountID, threadID, channelOwnerUserID(ch), "run.started", runData)
 	if err != nil {
 		return err
@@ -506,30 +549,6 @@ func (c qqbotConnector) HandleMessage(ctx context.Context, traceID string, ch da
 		return err
 	}
 	return tx.Commit(ctx)
-}
-
-func (c qqbotConnector) handleCommand(ctx context.Context, tx pgx.Tx, ch *data.Channel, identity data.ChannelIdentity, text string) (bool, string, error) {
-	if !strings.HasPrefix(strings.TrimSpace(text), "/") {
-		return false, "", nil
-	}
-	parts := strings.Fields(text)
-	if len(parts) == 0 {
-		return false, "", nil
-	}
-	switch strings.TrimSpace(parts[0]) {
-	case "/help":
-		return true, "/bind <code> — 绑定你的账号\n/help — 显示帮助", nil
-	case "/start":
-		return true, "已连接 Arkloop\n\n使用 /bind <code> 绑定账号。", nil
-	case "/bind":
-		if len(parts) < 2 {
-			return true, "用法：/bind <code>", nil
-		}
-		replyText, err := bindChannelIdentity(ctx, tx, ch, identity, parts[1], "QQ", c.channelBindCodesRepo, c.channelIdentitiesRepo, c.channelIdentityLinksRepo, c.channelDMThreadsRepo, c.threadRepo)
-		return true, replyText, err
-	default:
-		return false, "", nil
-	}
 }
 
 func (c qqbotConnector) sendTextReply(ctx context.Context, scope, target, content, msgID string) {

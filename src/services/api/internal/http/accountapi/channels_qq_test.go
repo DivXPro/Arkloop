@@ -27,12 +27,12 @@ func TestTelegramCommandBaseWorksForQQ(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd, ok := telegramCommandBase(tt.text, "")
+			cmd, ok := slashCommandBase(tt.text, "")
 			if ok != tt.wantOK {
-				t.Fatalf("telegramCommandBase(%q, \"\") ok = %v, want %v", tt.text, ok, tt.wantOK)
+				t.Fatalf("slashCommandBase(%q, \"\") ok = %v, want %v", tt.text, ok, tt.wantOK)
 			}
 			if cmd != tt.wantCmd {
-				t.Fatalf("telegramCommandBase(%q, \"\") cmd = %q, want %q", tt.text, cmd, tt.wantCmd)
+				t.Fatalf("slashCommandBase(%q, \"\") cmd = %q, want %q", tt.text, cmd, tt.wantCmd)
 			}
 		})
 	}
@@ -145,28 +145,28 @@ func TestResolveQQChannelConfig(t *testing.T) {
 
 func TestQQIncomingShouldCreateRun(t *testing.T) {
 	t.Run("private always creates run", func(t *testing.T) {
-		m := qqIncomingMessage{ChatType: "private"}
+		m := InboundMessage{ChatType: "private"}
 		if !m.ShouldCreateRun() {
 			t.Fatal("expected true for private")
 		}
 	})
 
 	t.Run("group without mention or reply does not create run", func(t *testing.T) {
-		m := qqIncomingMessage{ChatType: "group"}
+		m := InboundMessage{ChatType: "group"}
 		if m.ShouldCreateRun() {
 			t.Fatal("expected false for group without triggers")
 		}
 	})
 
 	t.Run("group with mention creates run", func(t *testing.T) {
-		m := qqIncomingMessage{ChatType: "group", MentionsBot: true}
+		m := InboundMessage{ChatType: "group", MentionsBot: true}
 		if !m.ShouldCreateRun() {
 			t.Fatal("expected true for group with mention")
 		}
 	})
 
 	t.Run("group with reply to bot creates run", func(t *testing.T) {
-		m := qqIncomingMessage{ChatType: "group", IsReplyToBot: true}
+		m := InboundMessage{ChatType: "group", IsReplyToBot: true}
 		if !m.ShouldCreateRun() {
 			t.Fatal("expected true for group with reply to bot")
 		}

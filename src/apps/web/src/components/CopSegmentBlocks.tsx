@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { AssistantTurnSegment } from '../assistantTurnSegments'
 import type { CodeExecution } from './CodeExecutionCard'
 import type { CodeExecutionRef, FileOpRef, SubAgentRef, WebFetchRef, WebSource } from '../storage'
@@ -5,6 +6,7 @@ import type { WebSearchPhaseStep } from './cop-timeline/CopTimeline'
 import { CopTimeline } from './cop-timeline/CopTimeline'
 import { buildResolvedPool, buildSubSegments, buildThinkingOnlyFromItems, segmentLiveTitle } from '../copSubSegment'
 import { basename, presentationForTool, stringArg } from '../toolPresentation'
+import { contentText } from '../timelineText'
 import {
   copTimelinePayloadForSegment,
   deriveTodoChanges,
@@ -92,12 +94,20 @@ function genericRootToolFromCall(item: Extract<Extract<AssistantTurnSegment, { t
   const filename = stringArg(args, 'filename') || stringArg(args, 'file_path')
   const title = stringArg(args, 'title') || stringArg(args, 'name')
   const label = call.displayDescription || title || (filename ? basename(filename) : presentation.description || call.toolName)
+  const displayText = call.displayDescription
+    ? contentText(call.displayDescription)
+    : title
+      ? contentText(title)
+      : filename
+        ? contentText(basename(filename))
+        : presentation.text
   const preview = status === 'running' ? previewFromArgs(call.toolName, args) : undefined
   return {
     id: call.toolCallId,
     toolName: call.toolName,
     label,
     ...(call.displayDescription || presentation.description !== call.toolName ? { displayDescription: call.displayDescription || presentation.description } : {}),
+    displayText,
     ...(preview ? { output: preview } : {}),
     status,
     errorMessage: hasError ? call.errorMessage ?? call.errorClass : undefined,
@@ -134,7 +144,7 @@ function todoForFinalDisplay(todo: TodoWriteRef, allTodos: TodoWriteRef[]): Todo
   }
 }
 
-export function CopSegmentBlocks({
+export const CopSegmentBlocks = memo(function CopSegmentBlocks({
   segment,
   keyPrefix,
   codeExecutions,
@@ -266,4 +276,4 @@ export function CopSegmentBlocks({
       })}
     </>
   )
-}
+})

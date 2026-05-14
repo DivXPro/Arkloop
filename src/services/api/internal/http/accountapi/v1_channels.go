@@ -61,18 +61,6 @@ type updateChannelRequest struct {
 	ConfigJSON *json.RawMessage `json:"config_json"`
 }
 
-func requestedDefaultModel(raw *json.RawMessage) string {
-	if raw == nil || len(*raw) == 0 {
-		return ""
-	}
-	var cfg map[string]any
-	if err := json.Unmarshal(*raw, &cfg); err != nil {
-		return ""
-	}
-	model, _ := cfg["default_model"].(string)
-	return strings.TrimSpace(model)
-}
-
 func logChannelUpdateFailure(
 	ctx context.Context,
 	traceID string,
@@ -90,7 +78,6 @@ func logChannelUpdateFailure(
 		"has_bot_token_patch", req.BotToken != nil,
 		"has_persona_patch", req.PersonaID != nil,
 		"has_config_patch", req.ConfigJSON != nil,
-		"requested_default_model", requestedDefaultModel(req.ConfigJSON),
 		"err", err,
 	}
 	if req.IsActive != nil {
@@ -291,22 +278,6 @@ func createChannel(
 	if err != nil {
 		httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", err.Error(), traceID, nil)
 		return
-	}
-	if req.ChannelType == "telegram" {
-		allowUserScoped, err := resolveTelegramByokEnabled(r.Context(), entitlementSvc, actor.AccountID)
-		if err != nil {
-			httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
-			return
-		}
-		cfg, err := resolveTelegramConfig("telegram", normalizedConfig)
-		if err != nil {
-			httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", err.Error(), traceID, nil)
-			return
-		}
-		if err := validateTelegramChannelConfigSelectors(r.Context(), pool, actor.AccountID, cfg, allowUserScoped); err != nil {
-			httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", err.Error(), traceID, nil)
-			return
-		}
 	}
 	if req.ChannelType == "qqbot" {
 		if _, err := resolveQQBotChannelConfig(normalizedConfig); err != nil {
@@ -651,23 +622,6 @@ func updateChannel(
 		}
 		upd.ConfigJSON = &normalizedConfig
 		desiredConfigJSON = normalizedConfig
-	}
-	if ch.ChannelType == "telegram" {
-		allowUserScoped, err := resolveTelegramByokEnabled(r.Context(), entitlementSvc, actor.AccountID)
-		if err != nil {
-			logChannelUpdateFailure(r.Context(), traceID, *ch, req, err, "resolve_telegram_byok_enabled")
-			httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
-			return
-		}
-		cfg, err := resolveTelegramConfig("telegram", desiredConfigJSON)
-		if err != nil {
-			httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", err.Error(), traceID, nil)
-			return
-		}
-		if err := validateTelegramChannelConfigSelectors(r.Context(), pool, actor.AccountID, cfg, allowUserScoped); err != nil {
-			httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", err.Error(), traceID, nil)
-			return
-		}
 	}
 	if ch.ChannelType == "qqbot" {
 		if _, err := resolveQQBotChannelConfig(desiredConfigJSON); err != nil {
@@ -1101,11 +1055,7 @@ func syncTelegramHeartbeatStateAfterChannelMutation(
 		return tx.Commit(ctx)
 	}
 
-	cfg, err := resolveTelegramConfig("telegram", channel.ConfigJSON)
-	if err != nil {
-		return err
-	}
-	allowUserScoped, err := resolveTelegramByokEnabled(ctx, entitlementSvc, accountID)
+	allowUserScoped, err := resolveByokEnabled(ctx, entitlementSvc, accountID)
 	if err != nil {
 		return err
 	}
@@ -1115,7 +1065,6 @@ func syncTelegramHeartbeatStateAfterChannelMutation(
 		accountID,
 		channelID,
 		channel.PersonaID,
-		cfg.DefaultModel,
 		allowUserScoped,
 		personasRepo,
 	); err != nil {

@@ -279,6 +279,11 @@ func (c telegramConnector) enqueueTelegramStickerRegisterRunTx(
 	if err != nil {
 		return err
 	}
+	if identityID != nil && *identityID != uuid.Nil {
+		if err := ensureInboundThreadChatModel(ctx, tx, ch.AccountID, thread.ID, extractChannelDefaultModel(ch)); err != nil {
+			return err
+		}
+	}
 
 	run, _, err := c.runEventRepo.WithTx(tx).CreateRunWithStartedEvent(
 		ctx,
@@ -326,7 +331,7 @@ func (c telegramConnector) buildTelegramStickerRegisterStartedData(
 		return startedData, nil
 	}
 	startedData["model"] = selector
-	allowUserScoped, err := resolveTelegramByokEnabled(ctx, c.entitlementSvc, ch.AccountID)
+	allowUserScoped, err := resolveByokEnabled(ctx, c.entitlementSvc, ch.AccountID)
 	if err != nil {
 		return nil, err
 	}
@@ -346,22 +351,7 @@ func (c telegramConnector) resolveTelegramStickerModelSelector(
 	ch data.Channel,
 	identityID *uuid.UUID,
 ) (string, error) {
-	cfg, err := resolveTelegramConfig(ch.ChannelType, ch.ConfigJSON)
-	if err != nil {
-		return "", err
-	}
-	selector := strings.TrimSpace(cfg.DefaultModel)
-	if identityID == nil || *identityID == uuid.Nil || c.channelIdentitiesRepo == nil {
-		return selector, nil
-	}
-	preferredModel, _, err := c.channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, *identityID)
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(preferredModel) != "" {
-		selector = strings.TrimSpace(preferredModel)
-	}
-	return selector, nil
+	return "", nil
 }
 
 func telegramStickerObjectKey(accountID uuid.UUID, contentHash, mimeType string, preview bool) string {

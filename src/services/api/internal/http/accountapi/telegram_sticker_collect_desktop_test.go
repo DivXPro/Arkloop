@@ -157,11 +157,10 @@ func TestUpsertTelegramStickerPendingTx_GainingPreviewTriggersRegister(t *testin
 	}
 }
 
-func TestBuildTelegramStickerRegisterStartedData_UsesResolvedRouteID(t *testing.T) {
+func TestBuildTelegramStickerRegisterStartedData_DoesNotUseChannelDefaultModel(t *testing.T) {
 	ctx := context.Background()
 	pool, accountID := openStickerCollectDesktopDB(t, ctx)
 	ownerUserID := createStickerCollectUser(t, ctx, pool, "default-owner")
-	routeID := seedStickerSelectorRoute(t, ctx, pool, accountID, ownerUserID, "demo-cred", "gpt-5-mini")
 
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -180,48 +179,11 @@ func TestBuildTelegramStickerRegisterStartedData_UsesResolvedRouteID(t *testing.
 		t.Fatalf("build started data: %v", err)
 	}
 
-	if got := startedData["model"]; got != "demo-cred^gpt-5-mini" {
-		t.Fatalf("unexpected model selector: %#v", got)
+	if _, ok := startedData["model"]; ok {
+		t.Fatalf("unexpected model selector: %#v", startedData)
 	}
-	if got := startedData["route_id"]; got != routeID.String() {
-		t.Fatalf("unexpected route_id: %#v", got)
-	}
-}
-
-func TestBuildTelegramStickerRegisterStartedData_PrefersIdentityModelRoute(t *testing.T) {
-	ctx := context.Background()
-	pool, accountID := openStickerCollectDesktopDB(t, ctx)
-	ownerUserID := createStickerCollectUser(t, ctx, pool, "preferred-owner")
-	_ = seedStickerSelectorRoute(t, ctx, pool, accountID, ownerUserID, "demo-cred", "gpt-5-mini")
-	preferredRouteID := seedStickerSelectorRoute(t, ctx, pool, accountID, ownerUserID, "pref-cred", "claude-3-5-haiku")
-	identityID := seedStickerChannelIdentity(t, ctx, pool, "pref-identity", "pref-cred^claude-3-5-haiku")
-
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		t.Fatalf("begin tx: %v", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	channelIdentitiesRepo, err := data.NewChannelIdentitiesRepository(pool)
-	if err != nil {
-		t.Fatalf("new channel identities repo: %v", err)
-	}
-	connector := telegramConnector{channelIdentitiesRepo: channelIdentitiesRepo}
-	startedData, err := connector.buildTelegramStickerRegisterStartedData(ctx, tx, data.Channel{
-		AccountID:   accountID,
-		ChannelType: "telegram",
-		ConfigJSON:  json.RawMessage(`{"default_model":"demo-cred^gpt-5-mini"}`),
-		OwnerUserID: &ownerUserID,
-	}, &identityID, "hash-route-preferred")
-	if err != nil {
-		t.Fatalf("build started data: %v", err)
-	}
-
-	if got := startedData["model"]; got != "pref-cred^claude-3-5-haiku" {
-		t.Fatalf("unexpected preferred model selector: %#v", got)
-	}
-	if got := startedData["route_id"]; got != preferredRouteID.String() {
-		t.Fatalf("unexpected preferred route_id: %#v", got)
+	if _, ok := startedData["route_id"]; ok {
+		t.Fatalf("unexpected route_id: %#v", startedData)
 	}
 }
 
@@ -296,23 +258,6 @@ func seedStickerSelectorRoute(t *testing.T, ctx context.Context, pool *sqlitepgx
 		t.Fatalf("create llm route: %v", err)
 	}
 	return route.ID
-}
-
-func seedStickerChannelIdentity(t *testing.T, ctx context.Context, pool *sqlitepgx.Pool, subjectID, preferredModel string) uuid.UUID {
-	t.Helper()
-
-	repo, err := data.NewChannelIdentitiesRepository(pool)
-	if err != nil {
-		t.Fatalf("new channel identities repo: %v", err)
-	}
-	identity, err := repo.Upsert(ctx, "telegram", subjectID, nil, nil, nil)
-	if err != nil {
-		t.Fatalf("upsert channel identity: %v", err)
-	}
-	if err := repo.UpdatePreferenceConfig(ctx, identity.ID, preferredModel, ""); err != nil {
-		t.Fatalf("update channel identity preference: %v", err)
-	}
-	return identity.ID
 }
 
 func seedStickerRow(t *testing.T, ctx context.Context, pool *sqlitepgx.Pool, accountID uuid.UUID, contentHash string, updatedAt time.Time) {

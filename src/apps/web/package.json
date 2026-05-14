@@ -10,10 +10,13 @@
     "type-check": "tsc -b",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "mkdir -p public/mcp-ext-apps && cp node_modules/@modelcontextprotocol/ext-apps/dist/src/app-with-deps.js public/mcp-ext-apps/app-with-deps.js"
   },
   "dependencies": {
     "@arkloop/shared": "workspace:*",
+    "@modelcontextprotocol/ext-apps": "^1.7.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "framer-motion": "^12.34.3",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.28",
@@ -34,7 +37,8 @@
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

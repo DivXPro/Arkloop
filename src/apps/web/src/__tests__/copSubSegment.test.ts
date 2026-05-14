@@ -101,7 +101,7 @@ describe('copSubSegment web search titles', () => {
 
     expect(segments[0]?.title).toBe('Searched for rust crate niche')
     expect(titleSpansToText(aggregateMainTitle(segments, false, true))).toBe('Searched for rust crate niche')
-    expect(titleSpansToLocaleText(aggregateMainTitle(segments, false, true), 'zh')).toBe('已搜索 rust crate niche')
+    expect(titleSpansToLocaleText(aggregateMainTitle(segments, false, true), 'zh')).toBe('搜索 rust crate niche')
     expect(titleSpansToText(aggregateMainTitle(segments, false, true))).not.toBe('1 step completed')
   })
 
@@ -127,6 +127,20 @@ describe('copSubSegment plan mode titles', () => {
     expect(segments[0]?.title).toBe('Enter Plan Mode')
     expect(titleSpansToText(aggregateMainTitle(segments, false, true))).toBe('Enter Plan Mode')
     expect(titleSpansToText(aggregateMainTitle(segments, false, true))).not.toContain('enter_plan_mode')
+  })
+})
+
+describe('copSubSegment todo titles', () => {
+  it('todo generic titles 使用语义文本', () => {
+    const writeSegments = buildSubSegments([
+      toolCall('todo1', 'todo_write', 1),
+    ])
+    const readSegments = buildSubSegments([
+      toolCall('todo2', 'todo_read', 1),
+    ])
+
+    expect(titleSpansToLocaleText(aggregateMainTitle(writeSegments, false, true), 'zh')).toBe('更新待办')
+    expect(titleSpansToLocaleText(aggregateMainTitle(readSegments, false, true), 'zh')).toBe('读取待办')
   })
 })
 

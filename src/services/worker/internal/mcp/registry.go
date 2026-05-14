@@ -173,8 +173,14 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 	for _, entry := range discoveredByServer {
 		server := entry.server
 		remoteMap := map[string]string{}
+		resourceURIs := map[string]string{}
 
 		for _, tool := range entry.tools {
+			// visibility 过滤：不含 "model" 的 tool 对 agent 隐藏
+			if !isToolVisibleToModel(tool) {
+				continue
+			}
+
 			base := mcpToolBaseName(server.ServerID, tool.Name)
 			internal := base
 			if baseCounts[base] > 1 {
@@ -184,6 +190,10 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 			internal = ensureUniqueToolName(internal, usedNames)
 			remoteMap[internal] = tool.Name
 
+			if uri := extractToolResourceURI(tool); uri != "" {
+				resourceURIs[internal] = uri
+			}
+
 			description := ""
 			if tool.Description != nil && strings.TrimSpace(*tool.Description) != "" {
 				description = strings.TrimSpace(*tool.Description)
@@ -192,6 +202,9 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 			} else {
 				description = "MCP tool: " + tool.Name
 			}
+			if resourceURIs[internal] != "" {
+				description += "\n\n该工具的结果将以交互式界面的形式呈现在回复内容下方，无需复述界面中的具体数据。"
+			}
 
 			agentSpecs = append(agentSpecs, tools.AgentToolSpec{
 				Name:        internal,
@@ -199,6 +212,7 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 				Description: description,
 				RiskLevel:   tools.RiskLevelHigh,
 				SideEffects: true,
+				ResourceURI: resourceURIs[internal],
 			})
 			llmSpecs = append(llmSpecs, llm.ToolSpec{
 				Name:        internal,
@@ -207,7 +221,7 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 			})
 		}
 
-		executor := NewToolExecutor(server, remoteMap, pool)
+		executor := NewToolExecutor(server, remoteMap, resourceURIs, pool)
 		for internalName := range remoteMap {
 			executors[internalName] = executor
 		}
@@ -234,6 +248,8 @@ func classifyDiscoverError(err error) string {
 		return "protocol"
 	case RpcError:
 		return "rpc"
+	case AuthRequiredError:
+		return "auth_required"
 	default:
 		return "unknown"
 	}

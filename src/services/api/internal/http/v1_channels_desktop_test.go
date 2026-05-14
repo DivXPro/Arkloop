@@ -495,7 +495,7 @@ func TestDesktopCreateChannelWorksWithoutChannelIDDefault(t *testing.T) {
 	}
 }
 
-func TestDesktopUpdateTelegramChannelDefaultModelDoesNotRequireDecryptInPollingMode(t *testing.T) {
+func TestDesktopUpdateTelegramChannelStripsDefaultModelInPollingMode(t *testing.T) {
 	ctx := context.Background()
 
 	sqlitePool, err := sqliteadapter.AutoMigrate(ctx, filepath.Join(t.TempDir(), "data.db"))
@@ -615,8 +615,8 @@ func TestDesktopUpdateTelegramChannelDefaultModelDoesNotRequireDecryptInPollingM
 		t.Fatalf("decode update response: %v", err)
 	}
 	cfg, _ := updated["config_json"].(map[string]any)
-	if got, _ := cfg["default_model"].(string); got != "minimax^MiniMax-M2.7" {
-		t.Fatalf("unexpected default_model: %#v", updated["config_json"])
+	if _, ok := cfg["default_model"]; ok {
+		t.Fatalf("default_model should be stripped: %#v", updated["config_json"])
 	}
 }
 

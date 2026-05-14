@@ -27,6 +27,7 @@ import {
   applyWebFetchToolResult,
   isWebFetchToolName,
   extractArtifacts,
+  extractResources,
   firstVisibleCodeExecutionToolCallIndex,
 } from '../agentEventProcessing'
 import {
@@ -110,6 +111,7 @@ export function useThreadSseEffect({
   const {
     currentRunSourcesRef,
     currentRunArtifactsRef,
+    currentRunResourcesRef,
     currentRunCodeExecutionsRef,
     currentRunBrowserActionsRef,
     currentRunSubAgentsRef,
@@ -624,8 +626,8 @@ export function useThreadSseEffect({
             currentRunSourcesRef.current = [...currentRunSourcesRef.current, ...newSources]
           }
         }
-        const result = agentEventToolOutput(event.data) as { artifacts?: unknown[]; stdout?: unknown; stderr?: unknown; exit_code?: unknown; output?: unknown } | undefined
-        const newArtifacts = extractArtifacts(result)
+        // 传入整个 event.data（resources 和 artifacts 均在嵌套 result/output 内部）
+        const newArtifacts = extractArtifacts(event.data)
         if (newArtifacts.length > 0) {
           currentRunArtifactsRef.current = [...currentRunArtifactsRef.current, ...newArtifacts]
           if (resultToolName === 'create_artifact') {
@@ -640,6 +642,10 @@ export function useThreadSseEffect({
             }
             setStreamingArtifacts([...streamingArtifactsRef.current])
           }
+        }
+        const newResources = extractResources(event.data)
+        if (newResources.length > 0) {
+          currentRunResourcesRef.current = [...currentRunResourcesRef.current, ...newResources]
         }
         if (resultToolName === 'python_execute' || resultToolName === 'exec_command' || resultToolName === 'continue_process' || resultToolName === 'terminate_process' || resultToolName === 'document_write' || resultToolName === 'create_artifact' || resultToolName === 'browser' || isWebFetchToolName(resultToolName)) {
           const codeExecutionResult = applyCodeExecutionToolResult(currentRunCodeExecutionsRef.current, event)

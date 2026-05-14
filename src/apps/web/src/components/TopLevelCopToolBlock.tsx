@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import type { CodeExecutionRef } from '../storage'
 import type { FileOpRef } from '../storage'
 import type { GenericToolCallRef, TodoWriteRef } from '../copSegmentTimeline'
@@ -118,7 +118,7 @@ function TopLevelToolFrame({ toolName, children }: { toolName: string; children:
   )
 }
 
-export function TopLevelCopToolBlock({
+export const TopLevelCopToolBlock = memo(function TopLevelCopToolBlock({
   entry,
   live,
   onOpenCodeExecution,
@@ -151,6 +151,7 @@ export function TopLevelCopToolBlock({
           toolName={item.toolName}
           label={item.label}
           displayDescription={item.displayDescription}
+          displayText={item.displayText}
           output={item.status === 'running' ? undefined : item.output}
           emptyLabel={item.emptyLabel}
           status={item.status}
@@ -171,6 +172,7 @@ export function TopLevelCopToolBlock({
           <ExecutionCard
             variant="shell"
             displayDescription={ce.displayDescription}
+            displayText={ce.displayText}
             code={ce.code}
             output={ce.output}
             status={ce.status}
@@ -193,4 +195,4 @@ export function TopLevelCopToolBlock({
       }
     </TopLevelToolFrame>
   )
-}
+})

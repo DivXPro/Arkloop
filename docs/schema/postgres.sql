@@ -3769,3 +3769,106 @@ CREATE TABLE sticker_description_cache (
 
 CREATE INDEX idx_sticker_description_cache_timestamp
     ON sticker_description_cache(timestamp DESC);
+
+
+-- === 00190_mcp_oauth_connections.sql ===
+CREATE TABLE mcp_oauth_connections (
+    id                            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id                    UUID        NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    profile_ref                   TEXT        NOT NULL REFERENCES profile_registries(profile_ref) ON DELETE CASCADE,
+    install_id                    UUID        NOT NULL REFERENCES profile_mcp_installs(id) ON DELETE CASCADE,
+    token_secret_id               UUID        NOT NULL REFERENCES secrets(id) ON DELETE CASCADE,
+    client_id                     TEXT,
+    client_secret_secret_id       UUID        REFERENCES secrets(id) ON DELETE SET NULL,
+    registration_client_uri       TEXT,
+    registration_access_secret_id UUID        REFERENCES secrets(id) ON DELETE SET NULL,
+    scope                         TEXT,
+    expires_at                    TIMESTAMPTZ,
+    created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_mcp_oauth_connections_install UNIQUE (account_id, profile_ref, install_id)
+);
+
+CREATE INDEX idx_mcp_oauth_connections_account_profile
+    ON mcp_oauth_connections (account_id, profile_ref);
+
+CREATE TABLE mcp_oauth_flows (
+    id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id              UUID        NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    profile_ref             TEXT        NOT NULL REFERENCES profile_registries(profile_ref) ON DELETE CASCADE,
+    install_id              UUID        NOT NULL REFERENCES profile_mcp_installs(id) ON DELETE CASCADE,
+    state                   TEXT        NOT NULL UNIQUE,
+    redirect_uri            TEXT        NOT NULL,
+    authorization_url       TEXT        NOT NULL,
+    code_verifier_secret_id UUID        NOT NULL REFERENCES secrets(id) ON DELETE CASCADE,
+    client_id               TEXT,
+    client_secret_secret_id UUID        REFERENCES secrets(id) ON DELETE SET NULL,
+    scope                   TEXT,
+    expires_at              TIMESTAMPTZ NOT NULL,
+    completed_at            TIMESTAMPTZ,
+    connection_id           UUID        REFERENCES mcp_oauth_connections(id) ON DELETE SET NULL,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_mcp_oauth_flows_account_install
+    ON mcp_oauth_flows (account_id, profile_ref, install_id);
+
+CREATE INDEX idx_mcp_oauth_flows_expires
+    ON mcp_oauth_flows (expires_at);
+
+
+-- === 00196_thread_centric_model_unification.sql ===
+UPDATE threads
+   SET config_json = (config_json - 'default_model')
+                  || jsonb_build_object('chat_model', config_json->>'default_model')
+ WHERE config_json ? 'default_model';
+
+UPDATE threads AS t
+   SET config_json = jsonb_set(COALESCE(t.config_json, '{}'::jsonb), '{chat_model}', ch.config_json->'default_model')
+  FROM channels AS ch, channel_group_threads AS cgt
+ WHERE cgt.channel_id = ch.id
+   AND cgt.thread_id = t.id
+   AND NOT t.config_json ? 'chat_model'
+   AND ch.config_json ? 'default_model'
+   AND ch.config_json->>'default_model' <> ''
+   AND t.deleted_at IS NULL;
+
+UPDATE threads AS t
+   SET config_json = jsonb_set(COALESCE(t.config_json, '{}'::jsonb), '{chat_model}', ch.config_json->'default_model')
+  FROM channels AS ch, channel_dm_threads AS cdt
+ WHERE cdt.channel_id = ch.id
+   AND cdt.thread_id = t.id
+   AND NOT t.config_json ? 'chat_model'
+   AND ch.config_json ? 'default_model'
+   AND ch.config_json->>'default_model' <> ''
+   AND t.deleted_at IS NULL;
+
+ALTER TABLE scheduled_triggers
+    ADD COLUMN IF NOT EXISTS resolve_model_at_runtime BOOLEAN NOT NULL DEFAULT FALSE;
+
+UPDATE scheduled_triggers AS st
+   SET model = COALESCE(NULLIF(btrim(t.config_json->>'heartbeat_model'), ''), ''),
+       resolve_model_at_runtime = COALESCE(NULLIF(btrim(t.config_json->>'heartbeat_model'), ''), '') = ''
+  FROM threads AS t
+ WHERE st.thread_id = t.id
+   AND st.trigger_kind = 'heartbeat'
+   AND st.thread_id IS NOT NULL;
+
+
+-- === 00197_drop_legacy_channel_model_config.sql ===
+UPDATE channels
+   SET config_json = config_json - 'default_model'
+ WHERE config_json ? 'default_model';
+
+ALTER TABLE IF EXISTS channel_identities
+    DROP COLUMN IF EXISTS preferred_model,
+    DROP COLUMN IF EXISTS reasoning_mode,
+    DROP COLUMN IF EXISTS heartbeat_enabled,
+    DROP COLUMN IF EXISTS heartbeat_interval_minutes,
+    DROP COLUMN IF EXISTS heartbeat_model;
+
+ALTER TABLE IF EXISTS channel_identity_links
+    DROP COLUMN IF EXISTS heartbeat_enabled,
+    DROP COLUMN IF EXISTS heartbeat_interval_minutes,
+    DROP COLUMN IF EXISTS heartbeat_model;
