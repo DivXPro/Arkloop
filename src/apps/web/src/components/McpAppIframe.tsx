@@ -217,15 +217,10 @@ export function McpAppIframe({ uri, content, toolOutput, onOpenLink, style, clas
     return () => window.removeEventListener('message', handler)
   }, [])
 
-  const srcDocRef = useRef(srcDoc)
-  srcDocRef.current = srcDoc
-
   const rebuildSrcDoc = useCallback((htmlContent: string) => {
     const snapshot = collectThemeSnapshot()
     const next = IFRAME_HTML_TEMPLATE(snapshot.css, htmlContent)
-    if (next !== srcDocRef.current) {
-      setSrcDoc(next)
-    }
+    setSrcDoc((prev) => (prev !== next ? next : prev))
   }, [])
 
   useEffect(() => {
