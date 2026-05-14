@@ -3270,7 +3270,9 @@ func toolResultMessage(result llm.StreamToolResult) llm.Message {
 		envelope["display_description"] = result.DisplayDescription
 	}
 	if result.ResultJSON != nil {
-		envelope["result"] = result.ResultJSON
+		cleaned := copyMap(result.ResultJSON)
+		delete(cleaned, "resources")
+		envelope["result"] = cleaned
 	}
 	if result.Error != nil {
 		envelope["error"] = result.Error.ToJSON()
