@@ -83,25 +83,6 @@ func TestChannelBindingsEndpointsSupportOwnerTransferAndHeartbeat(t *testing.T) 
 		t.Fatalf("admin binding unexpected: %#v", adminBinding)
 	}
 
-	heartbeatReq := map[string]any{
-		"heartbeat_enabled":          true,
-		"heartbeat_interval_minutes": 12,
-		"heartbeat_model":            "gpt-5.4",
-	}
-	updateResp := doJSONAccount(
-		env.handler,
-		nethttp.MethodPatch,
-		"/v1/channels/"+channel.ID.String()+"/bindings/"+adminBinding.BindingID,
-		heartbeatReq,
-		authHeader(env.accessToken),
-	)
-	if updateResp.Code != nethttp.StatusUnprocessableEntity {
-		t.Fatalf("heartbeat binding update should be rejected: %d %s", updateResp.Code, updateResp.Body.String())
-	}
-	if got := countRows(t, env.pool, `SELECT COUNT(*) FROM scheduled_triggers`); got != 0 {
-		t.Fatalf("scheduled triggers = %d, want 0", got)
-	}
-
 	makeOwnerResp := doJSONAccount(
 		env.handler,
 		nethttp.MethodPatch,

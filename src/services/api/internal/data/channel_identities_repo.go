@@ -7,9 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"arkloop/services/shared/pgnotify"
-	"arkloop/services/shared/runkind"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -24,8 +21,6 @@ type ChannelIdentity struct {
 	Metadata          json.RawMessage
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
-	PreferredModel    string
-	ReasoningMode     string
 }
 
 type ChannelIdentitiesRepository struct {
@@ -148,106 +143,4 @@ func (r *ChannelIdentitiesRepository) UpdateUserID(ctx context.Context, id uuid.
 		return fmt.Errorf("channel_identities.UpdateUserID: not found")
 	}
 	return nil
-}
-
-// UpdateHeartbeatConfig 更新 channel identity 的 heartbeat 配置。
-func (r *ChannelIdentitiesRepository) UpdateHeartbeatConfig(ctx context.Context, id uuid.UUID, enabled bool, intervalMinutes int, model string) error {
-	enabledInt := 0
-	if enabled {
-		enabledInt = 1
-	}
-	if intervalMinutes <= 0 {
-		intervalMinutes = runkind.DefaultHeartbeatIntervalMinutes
-	}
-	tag, err := r.db.Exec(ctx,
-		`UPDATE channel_identities
-		    SET heartbeat_enabled = $2,
-		        heartbeat_interval_minutes = $3,
-		        heartbeat_model = $4,
-		        updated_at = now()
-		  WHERE id = $1`,
-		id, enabledInt, intervalMinutes, model,
-	)
-	if err != nil {
-		return fmt.Errorf("channel_identities.UpdateHeartbeatConfig: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("channel_identities.UpdateHeartbeatConfig: not found")
-	}
-
-	now := time.Now().UTC()
-	if !enabled {
-		if _, err := r.db.Exec(ctx,
-			`DELETE FROM scheduled_triggers WHERE channel_identity_id = $1`,
-			id,
-		); err != nil {
-			return fmt.Errorf("channel_identities.UpdateHeartbeatConfig: delete trigger: %w", err)
-		}
-	} else {
-		nextFire := now.Add(time.Duration(intervalMinutes) * time.Minute)
-		if _, err := r.db.Exec(ctx, `
-			UPDATE scheduled_triggers
-			   SET interval_min = $2,
-			       model = $3,
-			       next_fire_at = CASE
-			           WHEN interval_min <> $2 THEN $4
-			           ELSE next_fire_at
-			       END,
-			       updated_at = now()
-			 WHERE channel_identity_id = $1`,
-			id,
-			intervalMinutes,
-			model,
-			nextFire,
-		); err != nil {
-			return fmt.Errorf("channel_identities.UpdateHeartbeatConfig: sync trigger: %w", err)
-		}
-	}
-	_, _ = r.db.Exec(ctx, "SELECT pg_notify($1, '')", pgnotify.ChannelHeartbeat)
-	return nil
-}
-
-// GetHeartbeatConfig 返回 channel identity 的 heartbeat 配置。
-func (r *ChannelIdentitiesRepository) GetHeartbeatConfig(ctx context.Context, id uuid.UUID) (enabled bool, intervalMinutes int, model string, err error) {
-	var enabledInt int
-	err = r.db.QueryRow(ctx,
-		`SELECT heartbeat_enabled, heartbeat_interval_minutes, heartbeat_model
-		   FROM channel_identities WHERE id = $1`,
-		id,
-	).Scan(&enabledInt, &intervalMinutes, &model)
-	if err != nil {
-		return false, 0, "", fmt.Errorf("channel_identities.GetHeartbeatConfig: %w", err)
-	}
-	return enabledInt != 0, intervalMinutes, model, nil
-}
-
-// UpdatePreferenceConfig 更新 channel identity 的模型偏好配置。
-func (r *ChannelIdentitiesRepository) UpdatePreferenceConfig(ctx context.Context, id uuid.UUID, preferredModel string, reasoningMode string) error {
-	tag, err := r.db.Exec(ctx,
-		`UPDATE channel_identities
-		    SET preferred_model = $2,
-		        reasoning_mode = $3,
-		        updated_at = now()
-		  WHERE id = $1`,
-		id, preferredModel, reasoningMode,
-	)
-	if err != nil {
-		return fmt.Errorf("channel_identities.UpdatePreferenceConfig: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("channel_identities.UpdatePreferenceConfig: not found")
-	}
-	return nil
-}
-
-// GetPreferenceConfig 返回 channel identity 的模型偏好配置。
-func (r *ChannelIdentitiesRepository) GetPreferenceConfig(ctx context.Context, id uuid.UUID) (preferredModel string, reasoningMode string, err error) {
-	err = r.db.QueryRow(ctx,
-		`SELECT preferred_model, reasoning_mode FROM channel_identities WHERE id = $1`,
-		id,
-	).Scan(&preferredModel, &reasoningMode)
-	if err != nil {
-		return "", "", fmt.Errorf("channel_identities.GetPreferenceConfig: %w", err)
-	}
-	return preferredModel, reasoningMode, nil
 }

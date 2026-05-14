@@ -17,11 +17,10 @@ import (
 const discordRemoteRequestTimeout = 10 * time.Second
 
 type discordChannelConfig struct {
-	AllowedServerIDs   []string `json:"allowed_server_ids"`
-	AllowedChannelIDs  []string `json:"allowed_channel_ids"`
-	DefaultModel       string   `json:"default_model,omitempty"`
-	DiscordApplicationID string `json:"discord_application_id,omitempty"`
-	DiscordBotUserID     string `json:"discord_bot_user_id,omitempty"`
+	AllowedServerIDs     []string `json:"allowed_server_ids"`
+	AllowedChannelIDs    []string `json:"allowed_channel_ids"`
+	DiscordApplicationID string   `json:"discord_application_id,omitempty"`
+	DiscordBotUserID     string   `json:"discord_bot_user_id,omitempty"`
 }
 
 func normalizeDiscordChannelConfig(raw json.RawMessage) (json.RawMessage, *discordChannelConfig, error) {
@@ -40,7 +39,6 @@ func normalizeDiscordChannelConfig(raw json.RawMessage) (json.RawMessage, *disco
 	}
 	cfg.AllowedServerIDs = normalizeDiscordIDList(cfg.AllowedServerIDs)
 	cfg.AllowedChannelIDs = normalizeDiscordIDList(cfg.AllowedChannelIDs)
-	cfg.DefaultModel = strings.TrimSpace(cfg.DefaultModel)
 	cfg.DiscordApplicationID = strings.TrimSpace(cfg.DiscordApplicationID)
 	cfg.DiscordBotUserID = strings.TrimSpace(cfg.DiscordBotUserID)
 

@@ -73,13 +73,13 @@ func NewChannelContextMiddleware(pool *pgxpool.Pool) RunMiddleware {
 		rc.ChannelContext = channelCtx
 		if pool != nil && rc.Run.ThreadID != uuid.Nil {
 			overrides := readThreadRunOverrides(ctx, pool, rc.Run.ThreadID)
-			if overrides.DefaultModel != "" {
+			if overrides.ChatModel != "" {
 				if rc.InputJSON == nil {
 					rc.InputJSON = map[string]any{}
 				}
 				if _, ok := rc.InputJSON["model"]; !ok {
 					if _, higher := rc.InputJSON["output_model_key"]; !higher {
-						rc.InputJSON["model"] = overrides.DefaultModel
+						rc.InputJSON["model"] = overrides.ChatModel
 					}
 				}
 			}
@@ -107,7 +107,7 @@ func readThreadRunOverrides(ctx context.Context, pool *pgxpool.Pool, threadID uu
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return data.ThreadConfig{}
 	}
-	cfg.DefaultModel = strings.TrimSpace(cfg.DefaultModel)
+	cfg.ChatModel = strings.TrimSpace(cfg.ChatModel)
 	cfg.ReasoningMode = normalizeRunReasoningModeOverride(cfg.ReasoningMode)
 	return cfg
 }

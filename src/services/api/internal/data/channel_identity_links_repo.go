@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"arkloop/services/shared/pgnotify"
-	"arkloop/services/shared/runkind"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -22,18 +19,15 @@ type ChannelIdentityLink struct {
 }
 
 type ChannelBinding struct {
-	BindingID                uuid.UUID
-	ChannelID                uuid.UUID
-	ChannelIdentityID        uuid.UUID
-	UserID                   *uuid.UUID
-	DisplayName              *string
-	PlatformSubjectID        string
-	IsOwner                  bool
-	HeartbeatEnabled         bool
-	HeartbeatIntervalMinutes int
-	HeartbeatModel           string
-	CreatedAt                time.Time
-	UpdatedAt                time.Time
+	BindingID         uuid.UUID
+	ChannelID         uuid.UUID
+	ChannelIdentityID uuid.UUID
+	UserID            *uuid.UUID
+	DisplayName       *string
+	PlatformSubjectID string
+	IsOwner           bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 type ChannelIdentityLinksRepository struct {
@@ -107,9 +101,6 @@ func (r *ChannelIdentityLinksRepository) GetBinding(
 		            WHEN ch.owner_user_id IS NOT NULL AND ci.user_id = ch.owner_user_id THEN TRUE
 		            ELSE FALSE
 		        END AS is_owner,
-		        COALESCE(cil.heartbeat_enabled, 0),
-		        COALESCE(cil.heartbeat_interval_minutes, 30),
-		        COALESCE(cil.heartbeat_model, ''),
 		        cil.created_at,
 		        cil.updated_at
 		   FROM channel_identity_links cil
@@ -148,9 +139,6 @@ func (r *ChannelIdentityLinksRepository) ListBindings(
 		            WHEN ch.owner_user_id IS NOT NULL AND ci.user_id = ch.owner_user_id THEN TRUE
 		            ELSE FALSE
 		        END AS is_owner,
-		        COALESCE(cil.heartbeat_enabled, 0),
-		        COALESCE(cil.heartbeat_interval_minutes, 30),
-		        COALESCE(cil.heartbeat_model, ''),
 		        cil.created_at,
 		        cil.updated_at
 		   FROM channel_identity_links cil
@@ -194,9 +182,6 @@ func (r *ChannelIdentityLinksRepository) ListBindingsByIdentity(
 		            WHEN ch.owner_user_id IS NOT NULL AND ci.user_id = ch.owner_user_id THEN TRUE
 		            ELSE FALSE
 		        END AS is_owner,
-		        COALESCE(cil.heartbeat_enabled, 0),
-		        COALESCE(cil.heartbeat_interval_minutes, 30),
-		        COALESCE(cil.heartbeat_model, ''),
 		        cil.created_at,
 		        cil.updated_at
 		   FROM channel_identity_links cil
@@ -289,48 +274,8 @@ func (r *ChannelIdentityLinksRepository) DeleteByIdentity(
 	return nil
 }
 
-func (r *ChannelIdentityLinksRepository) UpdateHeartbeatConfig(
-	ctx context.Context,
-	bindingID uuid.UUID,
-	enabled bool,
-	intervalMinutes int,
-	model string,
-) error {
-	if bindingID == uuid.Nil {
-		return fmt.Errorf("channel_identity_links.UpdateHeartbeatConfig: binding id must not be empty")
-	}
-	enabledInt := 0
-	if enabled {
-		enabledInt = 1
-	}
-	if intervalMinutes <= 0 {
-		intervalMinutes = runkind.DefaultHeartbeatIntervalMinutes
-	}
-	tag, err := r.db.Exec(ctx,
-		`UPDATE channel_identity_links
-		    SET heartbeat_enabled = $2,
-		        heartbeat_interval_minutes = $3,
-		        heartbeat_model = $4,
-		        updated_at = now()
-		  WHERE id = $1`,
-		bindingID,
-		enabledInt,
-		intervalMinutes,
-		model,
-	)
-	if err != nil {
-		return fmt.Errorf("channel_identity_links.UpdateHeartbeatConfig: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("channel_identity_links.UpdateHeartbeatConfig: not found")
-	}
-	_, _ = r.db.Exec(ctx, "SELECT pg_notify($1, '')", pgnotify.ChannelHeartbeat)
-	return nil
-}
-
 func scanChannelBinding(row interface{ Scan(dest ...any) error }) (ChannelBinding, error) {
 	var item ChannelBinding
-	var enabledInt int
 	err := row.Scan(
 		&item.BindingID,
 		&item.ChannelID,
@@ -339,15 +284,11 @@ func scanChannelBinding(row interface{ Scan(dest ...any) error }) (ChannelBindin
 		&item.DisplayName,
 		&item.PlatformSubjectID,
 		&item.IsOwner,
-		&enabledInt,
-		&item.HeartbeatIntervalMinutes,
-		&item.HeartbeatModel,
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	)
 	if err != nil {
 		return ChannelBinding{}, err
 	}
-	item.HeartbeatEnabled = enabledInt != 0
 	return item, nil
 }

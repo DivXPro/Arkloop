@@ -4,6 +4,7 @@ package desktoprun
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -191,6 +192,16 @@ func desktopFireTrigger(
 		return
 	}
 
+	resolvedModel, err := resolveDesktopHeartbeatModel(ctx, db, row)
+	if err != nil {
+		slog.ErrorContext(ctx, "desktop_trigger_model_resolve_failed",
+			"trigger_id", row.ID.String(),
+			"error", err,
+		)
+		_ = repo.PostponeTrigger(ctx, db, row.ID, 2*time.Minute)
+		return
+	}
+
 	tx, err := db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		slog.ErrorContext(ctx, "desktop_trigger_tx_begin_failed", "error", err)
@@ -198,7 +209,7 @@ func desktopFireTrigger(
 		return
 	}
 
-	result, err := repo.InsertHeartbeatRunInTx(ctx, tx, row, ctxData, row.Model)
+	result, err := repo.InsertHeartbeatRunInTx(ctx, tx, row, ctxData, resolvedModel)
 	if err != nil {
 		_ = tx.Rollback(ctx)
 		if errors.Is(err, data.ErrThreadBusy) {
@@ -236,7 +247,7 @@ func desktopFireTrigger(
 		"heartbeat_interval_minutes": row.IntervalMin,
 		"heartbeat_reason":           "interval",
 		"persona_key":                row.PersonaKey,
-		"model":                      row.Model,
+		"model":                      resolvedModel,
 		"channel_delivery": map[string]any{
 			"channel_id":                 result.ChannelID,
 			"channel_type":               result.ChannelType,
@@ -258,6 +269,50 @@ func desktopFireTrigger(
 		}
 		_ = repo.PostponeTrigger(ctx, db, row.ID, 2*time.Minute)
 	}
+}
+
+func resolveDesktopHeartbeatModel(ctx context.Context, db data.DesktopDB, row data.ScheduledTriggerRow) (string, error) {
+	if !row.ResolveModelAtRuntime {
+		return strings.TrimSpace(row.Model), nil
+	}
+	if row.ThreadID == nil || *row.ThreadID == uuid.Nil {
+		return strings.TrimSpace(row.Model), nil
+	}
+	var raw []byte
+	if err := db.QueryRow(ctx, `SELECT COALESCE(config_json, '{}') FROM threads WHERE id = $1 AND deleted_at IS NULL`, row.ThreadID.String()).Scan(&raw); err != nil {
+		return "", err
+	}
+	var cfg struct {
+		HeartbeatModel string `json:"heartbeat_model"`
+		ChatModel      string `json:"chat_model"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return "", err
+	}
+	if model := strings.TrimSpace(cfg.HeartbeatModel); model != "" {
+		return model, nil
+	}
+	if model := strings.TrimSpace(cfg.ChatModel); model != "" {
+		return model, nil
+	}
+	var personaModel string
+	err := db.QueryRow(ctx, `
+		SELECT COALESCE(model, '')
+		  FROM personas
+		 WHERE account_id = $1
+		   AND persona_key = $2
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		row.AccountID.String(),
+		row.PersonaKey,
+	).Scan(&personaModel)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(personaModel), nil
 }
 
 func desktopFireJob(

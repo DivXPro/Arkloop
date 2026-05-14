@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -208,6 +209,13 @@ func (s *TriggerScheduler) fireHeartbeat(ctx context.Context, row data.Scheduled
 		return
 	}
 
+	model, err := s.resolveHeartbeatModel(ctx, row)
+	if err != nil {
+		slog.ErrorContext(ctx, "trigger_scheduler_model_resolve_failed", "trigger_id", row.ID, "error", err)
+		_ = s.triggers.PostponeTrigger(ctx, s.pool, row.ID, 2*time.Minute)
+		return
+	}
+
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		slog.ErrorContext(ctx, "trigger_scheduler_tx_begin_failed", "error", err)
@@ -227,7 +235,7 @@ func (s *TriggerScheduler) fireHeartbeat(ctx context.Context, row data.Scheduled
 		"run.started",
 		map[string]any{
 			"persona_id": row.PersonaKey,
-			"model":      row.Model,
+			"model":      model,
 			"run_kind":   runkind.Heartbeat,
 			"channel_delivery": map[string]any{
 				"channel_id":                 ctxData.ChannelID.String(),
@@ -265,7 +273,7 @@ func (s *TriggerScheduler) fireHeartbeat(ctx context.Context, row data.Scheduled
 		"heartbeat_interval_minutes": row.IntervalMin,
 		"heartbeat_reason":           "interval",
 		"persona_key":                row.PersonaKey,
-		"model":                      row.Model,
+		"model":                      model,
 		"channel_delivery": map[string]any{
 			"channel_id":                 ctxData.ChannelID.String(),
 			"channel_type":               ctxData.ChannelType,
@@ -295,6 +303,50 @@ func (s *TriggerScheduler) fireHeartbeat(ctx context.Context, row data.Scheduled
 		_ = s.triggers.PostponeTrigger(ctx, s.pool, row.ID, 90*time.Second)
 		return
 	}
+}
+
+func (s *TriggerScheduler) resolveHeartbeatModel(ctx context.Context, row data.ScheduledTriggerRow) (string, error) {
+	if !row.ResolveModelAtRuntime {
+		return strings.TrimSpace(row.Model), nil
+	}
+	if row.ThreadID == nil || *row.ThreadID == uuid.Nil {
+		return strings.TrimSpace(row.Model), nil
+	}
+	var raw json.RawMessage
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(config_json, '{}'::jsonb) FROM threads WHERE id = $1 AND deleted_at IS NULL`, *row.ThreadID).Scan(&raw); err != nil {
+		return "", err
+	}
+	var cfg struct {
+		HeartbeatModel string `json:"heartbeat_model"`
+		ChatModel      string `json:"chat_model"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return "", err
+	}
+	if model := strings.TrimSpace(cfg.HeartbeatModel); model != "" {
+		return model, nil
+	}
+	if model := strings.TrimSpace(cfg.ChatModel); model != "" {
+		return model, nil
+	}
+	var personaModel string
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(model, '')
+		  FROM personas
+		 WHERE account_id = $1
+		   AND persona_key = $2
+		   AND deleted_at IS NULL
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		row.AccountID,
+		row.PersonaKey,
+	).Scan(&personaModel); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(personaModel), nil
 }
 
 func (s *TriggerScheduler) fireJob(ctx context.Context, row data.ScheduledTriggerRow) {

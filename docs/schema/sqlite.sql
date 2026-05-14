@@ -104,10 +104,30 @@ CREATE INDEX idx_plan_entitlements_plan_id ON plan_entitlements(plan_id);
 CREATE INDEX idx_platform_skill_overrides_profile
     ON profile_platform_skill_overrides (profile_ref);
 
+CREATE INDEX idx_plugin_enablements_account_plugin
+    ON plugin_enablements (account_id, plugin_id, plugin_version);
+
+CREATE INDEX idx_plugin_enablements_workspace
+    ON plugin_enablements (account_id, workspace_ref, desired_enabled);
+
+CREATE INDEX idx_plugin_packages_account_active
+    ON plugin_packages (account_id, is_active, plugin_id);
+
+CREATE INDEX idx_plugin_runtime_state_account_plugin
+    ON plugin_runtime_state (account_id, plugin_id, plugin_version);
+
 CREATE INDEX idx_profile_mcp_installs_account_profile
     ON profile_mcp_installs (account_id, profile_ref);
 
+CREATE INDEX idx_profile_mcp_installs_owner_plugin
+    ON profile_mcp_installs (account_id, owner_plugin_id)
+    WHERE owner_plugin_id IS NOT NULL;
+
 CREATE INDEX idx_profile_registries_org_id ON profile_registries(account_id);
+
+CREATE INDEX idx_profile_skill_installs_owner_plugin
+    ON profile_skill_installs (account_id, owner_plugin_id)
+    WHERE owner_plugin_id IS NOT NULL;
 
 CREATE INDEX idx_profile_skill_installs_profile_ref
     ON profile_skill_installs (account_id, profile_ref);
@@ -121,6 +141,10 @@ CREATE INDEX idx_replacement_supersession_edges_replacement
 
 CREATE INDEX idx_replacement_supersession_edges_thread
     ON replacement_supersession_edges (thread_id, created_at DESC);
+
+CREATE INDEX idx_scheduled_triggers_thread_id
+    ON scheduled_triggers (thread_id)
+    WHERE thread_id IS NOT NULL;
 
 CREATE UNIQUE INDEX idx_shell_sessions_org_profile_binding_type_unique
     ON shell_sessions (account_id, profile_ref, session_type, default_binding_key)
@@ -192,6 +216,14 @@ CREATE INDEX idx_thread_context_replacements_thread_created
 CREATE INDEX idx_thread_subagent_callbacks_thread_pending
     ON thread_subagent_callbacks(thread_id, created_at);
 
+CREATE INDEX idx_threads_owner_sidebar_gtd
+    ON threads (account_id, created_by_user_id, sidebar_gtd_bucket)
+    WHERE deleted_at IS NULL AND sidebar_gtd_bucket IS NOT NULL;
+
+CREATE INDEX idx_threads_owner_sidebar_pinned
+    ON threads (account_id, created_by_user_id, sidebar_pinned_at DESC)
+    WHERE deleted_at IS NULL AND sidebar_pinned_at IS NOT NULL;
+
 CREATE INDEX idx_threads_parent_thread_id ON threads(parent_thread_id) WHERE parent_thread_id IS NOT NULL;
 
 CREATE INDEX idx_worker_registrations_heartbeat ON worker_registrations(heartbeat_at);
@@ -240,6 +272,9 @@ CREATE INDEX ix_org_memberships_user_id ON "account_memberships"(user_id);
 
 CREATE INDEX ix_run_events_run_seq ON run_events(run_id, seq);
 
+CREATE INDEX ix_run_events_run_type_ts_seq
+    ON run_events(run_id, type, ts DESC, seq DESC);
+
 CREATE INDEX ix_run_events_type ON run_events(type);
 
 CREATE INDEX ix_runs_org_id ON runs(account_id);
@@ -251,6 +286,8 @@ CREATE INDEX ix_threads_created_by_user_id ON threads(created_by_user_id);
 CREATE INDEX ix_threads_deleted_at ON threads(deleted_at) WHERE deleted_at IS NOT NULL;
 
 CREATE INDEX ix_threads_org_id ON threads(account_id);
+
+CREATE INDEX ix_threads_owner_activity ON threads(account_id, created_by_user_id, is_private, updated_at DESC, id DESC);
 
 CREATE UNIQUE INDEX ix_tool_provider_configs_platform_group_active
     ON tool_provider_configs (group_name)
@@ -276,13 +313,20 @@ CREATE INDEX run_pipeline_events_run_id_idx ON run_pipeline_events(run_id);
 
 CREATE INDEX scheduled_jobs_account_id_idx ON scheduled_jobs (account_id);
 
-CREATE UNIQUE INDEX scheduled_triggers_job_id_uniq ON scheduled_triggers (job_id) WHERE job_id IS NOT NULL;
+CREATE UNIQUE INDEX scheduled_triggers_identity_target_idx
+    ON scheduled_triggers (channel_id, channel_identity_id)
+    WHERE thread_id IS NULL;
+
+CREATE UNIQUE INDEX scheduled_triggers_job_id_uniq
+    ON scheduled_triggers (job_id)
+    WHERE job_id IS NOT NULL;
 
 CREATE INDEX scheduled_triggers_next_fire_at_idx
     ON scheduled_triggers (next_fire_at);
 
-CREATE INDEX scheduled_triggers_target_idx
-    ON scheduled_triggers (channel_id, channel_identity_id);
+CREATE UNIQUE INDEX scheduled_triggers_thread_target_idx
+    ON scheduled_triggers (thread_id)
+    WHERE thread_id IS NOT NULL;
 
 CREATE UNIQUE INDEX secrets_platform_name_idx
     ON secrets (name)
@@ -301,6 +345,12 @@ CREATE UNIQUE INDEX tool_provider_configs_user_provider_idx
     WHERE owner_kind = 'user' AND owner_user_id IS NOT NULL;
 
 CREATE UNIQUE INDEX uq_messages_thread_id_thread_seq ON messages(thread_id, thread_seq);
+
+CREATE UNIQUE INDEX uq_messages_user_client_message_id
+    ON messages (account_id, thread_id, created_by_user_id, json_extract(metadata_json, '$.client_message_id'))
+    WHERE role = 'user'
+      AND deleted_at IS NULL
+      AND COALESCE(json_extract(metadata_json, '$.client_message_id'), '') <> '';
 
 CREATE UNIQUE INDEX uq_platform_skills
     ON skill_packages (skill_key, version)
@@ -328,8 +378,8 @@ CREATE UNIQUE INDEX ux_llm_routes_credential_default
     ON llm_routes (credential_id)
     WHERE is_default = 1;
 
-CREATE UNIQUE INDEX ux_llm_routes_credential_model_lower
-    ON llm_routes (credential_id, lower(model));
+CREATE UNIQUE INDEX ux_llm_routes_credential_model
+    ON llm_routes (credential_id, model);
 
 CREATE UNIQUE INDEX ux_llm_routes_route_key
     ON llm_routes (lower(route_key))
@@ -401,7 +451,7 @@ CREATE TABLE api_keys (
     last_used_at TEXT,
     expires_at  TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
+, scopes TEXT NOT NULL DEFAULT '[]', revoked_at TEXT);
 
 CREATE TABLE asr_credentials (
     id            TEXT PRIMARY KEY DEFAULT (
@@ -508,7 +558,7 @@ CREATE TABLE channel_identities (
     avatar_url          TEXT,
     metadata            TEXT NOT NULL DEFAULT '{}',
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at          TEXT NOT NULL DEFAULT (datetime('now')), heartbeat_enabled INTEGER NOT NULL DEFAULT 0, heartbeat_interval_minutes INTEGER NOT NULL DEFAULT 30, heartbeat_model TEXT NOT NULL DEFAULT '', preferred_model TEXT NOT NULL DEFAULT '', reasoning_mode TEXT NOT NULL DEFAULT '',
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (channel_type, platform_subject_id)
 );
 
@@ -527,9 +577,6 @@ CREATE TABLE "channel_identity_links" (
     id                  TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
     channel_id          TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
     channel_identity_id TEXT NOT NULL REFERENCES channel_identities(id) ON DELETE CASCADE,
-    heartbeat_enabled   INTEGER NOT NULL DEFAULT 0,
-    heartbeat_interval_minutes INTEGER NOT NULL DEFAULT 30,
-    heartbeat_model     TEXT NOT NULL DEFAULT '',
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (channel_id, channel_identity_id)
@@ -872,6 +919,52 @@ CREATE TABLE platform_settings (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE plugin_enablements (
+    id                 TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+    account_id         TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    package_id         TEXT NOT NULL REFERENCES plugin_packages(id) ON DELETE CASCADE,
+    plugin_id          TEXT NOT NULL,
+    plugin_version     TEXT NOT NULL,
+    profile_ref        TEXT NOT NULL REFERENCES profile_registries(profile_ref) ON DELETE CASCADE,
+    workspace_ref      TEXT NOT NULL REFERENCES workspace_registries(workspace_ref) ON DELETE CASCADE,
+    desired_enabled    INTEGER NOT NULL DEFAULT 0,
+    enabled_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    settings_json      TEXT NOT NULL DEFAULT '{}',
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (account_id, package_id, profile_ref, workspace_ref)
+);
+
+CREATE TABLE plugin_packages (
+    id                   TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+    account_id           TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    plugin_id            TEXT NOT NULL,
+    version              TEXT NOT NULL,
+    display_name         TEXT NOT NULL,
+    description          TEXT,
+    manifest_json        TEXT NOT NULL,
+    settings_schema_json TEXT NOT NULL DEFAULT '{}',
+    source_kind          TEXT NOT NULL DEFAULT 'manifest',
+    source_uri           TEXT,
+    is_active            INTEGER NOT NULL DEFAULT 1,
+    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (account_id, plugin_id, version)
+);
+
+CREATE TABLE plugin_runtime_state (
+    account_id     TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    package_id     TEXT NOT NULL REFERENCES plugin_packages(id) ON DELETE CASCADE,
+    plugin_id      TEXT NOT NULL,
+    plugin_version TEXT NOT NULL,
+    profile_ref    TEXT NOT NULL REFERENCES profile_registries(profile_ref) ON DELETE CASCADE,
+    workspace_ref  TEXT NOT NULL REFERENCES workspace_registries(workspace_ref) ON DELETE CASCADE,
+    status         TEXT NOT NULL DEFAULT 'not_installed',
+    status_json    TEXT NOT NULL DEFAULT '{}',
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (account_id, package_id, profile_ref, workspace_ref)
+);
+
 CREATE TABLE profile_mcp_installs (
     id                     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
     install_key            TEXT NOT NULL,
@@ -890,7 +983,7 @@ CREATE TABLE profile_mcp_installs (
     last_error_message     TEXT,
     last_checked_at        TEXT,
     created_at             TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at             TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at             TEXT NOT NULL DEFAULT (datetime('now')), owner_plugin_id TEXT, owner_plugin_version TEXT,
     UNIQUE (account_id, profile_ref, install_key)
 );
 
@@ -932,7 +1025,7 @@ CREATE TABLE profile_skill_installs (
     skill_key     TEXT NOT NULL,
     version       TEXT NOT NULL,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now')), owner_plugin_id TEXT, owner_plugin_version TEXT,
     PRIMARY KEY (profile_ref, skill_key, version)
 );
 
@@ -1047,7 +1140,7 @@ CREATE TABLE runs (
     profile_ref         TEXT,
     workspace_ref       TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now'))
-);
+, updated_at TEXT);
 
 CREATE TABLE scheduled_jobs (
     id                  TEXT PRIMARY KEY,
@@ -1070,21 +1163,26 @@ CREATE TABLE scheduled_jobs (
     created_by_user_id  TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
-, weekly_day INTEGER, fire_at DATETIME, cron_expr TEXT NOT NULL DEFAULT '', delete_after_run INTEGER NOT NULL DEFAULT 0, thinking INTEGER NOT NULL DEFAULT 0, timeout_seconds INTEGER NOT NULL DEFAULT 0, light_context INTEGER NOT NULL DEFAULT 0, tools_allow TEXT NOT NULL DEFAULT '');
+, weekly_day INTEGER, fire_at DATETIME, cron_expr TEXT NOT NULL DEFAULT '', delete_after_run INTEGER NOT NULL DEFAULT 0, timeout_seconds INTEGER NOT NULL DEFAULT 0, reasoning_mode TEXT NOT NULL DEFAULT '');
 
 CREATE TABLE "scheduled_triggers" (
     id                    TEXT PRIMARY KEY,
     channel_id            TEXT NOT NULL,
     channel_identity_id   TEXT NOT NULL,
+    thread_id             TEXT REFERENCES threads(id) ON DELETE CASCADE,
     persona_key           TEXT NOT NULL,
     account_id            TEXT NOT NULL,
     model                 TEXT NOT NULL DEFAULT '',
     interval_min          INTEGER NOT NULL DEFAULT 30,
     next_fire_at          TEXT NOT NULL,
     created_at            TEXT NOT NULL,
-    updated_at            TEXT NOT NULL, trigger_kind TEXT NOT NULL DEFAULT 'heartbeat', job_id TEXT,
-    UNIQUE (channel_id, channel_identity_id)
-);
+    updated_at            TEXT NOT NULL,
+    trigger_kind          TEXT NOT NULL DEFAULT 'heartbeat',
+    job_id                TEXT,
+    cooldown_level        INTEGER NOT NULL DEFAULT 0,
+    last_user_msg_at      TEXT,
+    burst_start_at        TEXT
+, resolve_model_at_runtime INTEGER NOT NULL DEFAULT 0);
 
 CREATE TABLE secrets (
     id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -1370,7 +1468,7 @@ CREATE TABLE "threads" (
     branched_from_message_id TEXT,
     title_locked             INTEGER NOT NULL DEFAULT 0,
     mode                     TEXT NOT NULL DEFAULT 'chat' CHECK (mode IN ('chat', 'work')),
-    created_at               TEXT NOT NULL DEFAULT (datetime('now')), next_message_seq INTEGER NOT NULL DEFAULT 1,
+    created_at               TEXT NOT NULL DEFAULT (datetime('now')), next_message_seq INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, collaboration_mode TEXT NOT NULL DEFAULT 'default' CHECK (collaboration_mode IN ('default', 'plan')), collaboration_mode_revision INTEGER NOT NULL DEFAULT 0, sidebar_work_folder TEXT NULL, sidebar_pinned_at TEXT NULL, sidebar_gtd_bucket TEXT NULL CHECK (sidebar_gtd_bucket IS NULL OR sidebar_gtd_bucket IN ('inbox', 'todo', 'waiting', 'someday', 'archived')), learning_mode_enabled INTEGER NOT NULL DEFAULT 0, config_json TEXT NOT NULL DEFAULT '{}',
     UNIQUE (id, account_id)
 );
 
@@ -1386,7 +1484,7 @@ CREATE TABLE tool_description_overrides (
 
 CREATE TABLE tool_provider_configs (
     id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-    account_id      TEXT NOT NULL DEFAULT '00000000-0000-4000-8000-000000000002' REFERENCES accounts(id) ON DELETE CASCADE,
+    account_id      TEXT REFERENCES accounts(id) ON DELETE CASCADE,
     owner_kind      TEXT NOT NULL DEFAULT 'platform' CHECK (owner_kind IN ('platform', 'user')),
     owner_user_id   TEXT REFERENCES users(id) ON DELETE CASCADE,
     group_name      TEXT NOT NULL,

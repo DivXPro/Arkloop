@@ -41,7 +41,6 @@ type feishuChannelConfig struct {
 	AllowedUserIDs    []string `json:"allowed_user_ids,omitempty"`
 	AllowedChatIDs    []string `json:"allowed_chat_ids,omitempty"`
 	AllowAllUsers     bool     `json:"allow_all_users,omitempty"`
-	DefaultModel      string   `json:"default_model,omitempty"`
 	BotOpenID         string   `json:"bot_open_id,omitempty"`
 	BotUserID         string   `json:"bot_user_id,omitempty"`
 	BotName           string   `json:"bot_name,omitempty"`
@@ -60,20 +59,22 @@ type feishuChannelSecretPatch struct {
 }
 
 type feishuConnector struct {
-	channelsRepo            *data.ChannelsRepository
-	channelIdentitiesRepo   *data.ChannelIdentitiesRepository
-	channelDMThreadsRepo    *data.ChannelDMThreadsRepository
-	channelGroupThreadsRepo *data.ChannelGroupThreadsRepository
-	channelReceiptsRepo     *data.ChannelMessageReceiptsRepository
-	channelLedgerRepo       *data.ChannelMessageLedgerRepository
-	secretsRepo             *data.SecretsRepository
-	personasRepo            *data.PersonasRepository
-	threadRepo              *data.ThreadRepository
-	messageRepo             *data.MessageRepository
-	runEventRepo            *data.RunEventRepository
-	jobRepo                 *data.JobRepository
-	pool                    data.DB
-	inputNotify             func(ctx context.Context, runID uuid.UUID)
+	channelsRepo             *data.ChannelsRepository
+	channelIdentitiesRepo    *data.ChannelIdentitiesRepository
+	channelBindCodesRepo     *data.ChannelBindCodesRepository
+	channelIdentityLinksRepo *data.ChannelIdentityLinksRepository
+	channelDMThreadsRepo     *data.ChannelDMThreadsRepository
+	channelGroupThreadsRepo  *data.ChannelGroupThreadsRepository
+	channelReceiptsRepo      *data.ChannelMessageReceiptsRepository
+	channelLedgerRepo        *data.ChannelMessageLedgerRepository
+	secretsRepo              *data.SecretsRepository
+	personasRepo             *data.PersonasRepository
+	threadRepo               *data.ThreadRepository
+	messageRepo              *data.MessageRepository
+	runEventRepo             *data.RunEventRepository
+	jobRepo                  *data.JobRepository
+	pool                     data.DB
+	inputNotify              func(ctx context.Context, runID uuid.UUID)
 }
 
 type feishuWebhookEnvelope struct {
@@ -170,7 +171,6 @@ func normalizeFeishuChannelConfig(raw json.RawMessage) (json.RawMessage, *feishu
 	if !validFeishuDomain(cfg.Domain) {
 		return nil, nil, fmt.Errorf("feishu domain must be feishu or lark")
 	}
-	cfg.DefaultModel = strings.TrimSpace(cfg.DefaultModel)
 	cfg.BotOpenID = strings.TrimSpace(cfg.BotOpenID)
 	cfg.BotUserID = strings.TrimSpace(cfg.BotUserID)
 	cfg.BotName = strings.TrimSpace(cfg.BotName)
@@ -494,6 +494,8 @@ func feishuWebhookEntry(
 	messageRepo *data.MessageRepository,
 	runEventRepo *data.RunEventRepository,
 	jobRepo *data.JobRepository,
+	channelBindCodesRepo *data.ChannelBindCodesRepository,
+	channelIdentityLinksRepo *data.ChannelIdentityLinksRepository,
 	pool data.DB,
 ) func(nethttp.ResponseWriter, *nethttp.Request) {
 	var channelLedgerRepo *data.ChannelMessageLedgerRepository
@@ -505,19 +507,21 @@ func feishuWebhookEntry(
 		channelLedgerRepo = repo
 	}
 	connector := feishuConnector{
-		channelsRepo:            channelsRepo,
-		channelIdentitiesRepo:   channelIdentitiesRepo,
-		channelDMThreadsRepo:    channelDMThreadsRepo,
-		channelGroupThreadsRepo: channelGroupThreadsRepo,
-		channelReceiptsRepo:     channelReceiptsRepo,
-		channelLedgerRepo:       channelLedgerRepo,
-		secretsRepo:             secretsRepo,
-		personasRepo:            personasRepo,
-		threadRepo:              threadRepo,
-		messageRepo:             messageRepo,
-		runEventRepo:            runEventRepo,
-		jobRepo:                 jobRepo,
-		pool:                    pool,
+		channelsRepo:             channelsRepo,
+		channelIdentitiesRepo:    channelIdentitiesRepo,
+		channelDMThreadsRepo:     channelDMThreadsRepo,
+		channelGroupThreadsRepo:  channelGroupThreadsRepo,
+		channelReceiptsRepo:      channelReceiptsRepo,
+		channelLedgerRepo:        channelLedgerRepo,
+		secretsRepo:              secretsRepo,
+		personasRepo:             personasRepo,
+		threadRepo:               threadRepo,
+		messageRepo:              messageRepo,
+		runEventRepo:             runEventRepo,
+		jobRepo:                  jobRepo,
+		channelBindCodesRepo:     channelBindCodesRepo,
+		channelIdentityLinksRepo: channelIdentityLinksRepo,
+		pool:                     pool,
 		inputNotify: func(ctx context.Context, runID uuid.UUID) {
 			if _, err := pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunInput, runID.String()); err != nil {
 				slog.Warn("feishu_active_run_notify_failed", "run_id", runID.String(), "error", err)
@@ -936,10 +940,10 @@ func (c *feishuConnector) HandleIncoming(ctx context.Context, traceID string, ch
 
 	// --- 命令解析 ---
 	cmdText := strings.TrimSpace(incoming.Text)
-	_, replyText, _, cancelRunID, err := DispatchChannelCommand(
+	handled, replyText, _, _, cancelRunID, err := DispatchChannelCommand(
 		ctx, tx, ch, *persona, identity,
 		cmdText, incoming.ConversationType == "private", incoming.ChatID,
-		cfg.DefaultModel, nil,
+		nil,
 		ChannelCommandResolver{
 			ResolveThreadID: func(ctx context.Context, tx pgx.Tx, personaID, projectID uuid.UUID, isPrivate bool, chatID string) (uuid.UUID, error) {
 				return c.resolveFeishuThreadID(ctx, tx, ch, personaID, projectID, identity, incoming)
@@ -951,21 +955,39 @@ func (c *feishuConnector) HandleIncoming(ctx context.Context, traceID string, ch
 				}
 				return &gi, nil
 			},
+			BindCode: func() string {
+				parts := strings.Fields(cmdText)
+				if len(parts) >= 2 && parts[0] == "/bind" {
+					return parts[1]
+				}
+				return ""
+			},
 		},
-		c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
-		c.personasRepo, c.runEventRepo,
+		ChannelCommandDeps{
+			ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+			ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+			ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+			PersonasRepo:             c.personasRepo,
+			RunEventRepo:             c.runEventRepo,
+			ChannelBindCodesRepo:     c.channelBindCodesRepo,
+			ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+			ThreadRepo:               c.threadRepo,
+		},
+		"飞书",
 	)
 	if err != nil {
 		return err
 	}
-	if replyText != "" {
+	if handled {
 		if err := commitTx(); err != nil {
 			return err
 		}
 		if cancelRunID != uuid.Nil {
 			_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
 		}
-		_ = c.sendFeishuCommandReply(ctx, cfg, ch, incoming, replyText)
+		if replyText != "" {
+			_ = c.sendFeishuCommandReply(ctx, cfg, ch, incoming, replyText)
+		}
 		return nil
 	}
 
@@ -1017,7 +1039,7 @@ func (c *feishuConnector) HandleIncoming(ctx context.Context, traceID string, ch
 			if err != nil {
 				return InboundPipelinePersistResult{}, err
 			}
-			if err := ensureInboundThreadDefaultModel(ctx, tx, threadID, cfg.DefaultModel); err != nil {
+			if err := ensureInboundThreadChatModel(ctx, tx, ch.AccountID, threadID, extractChannelDefaultModel(ch)); err != nil {
 				return InboundPipelinePersistResult{}, err
 			}
 			content, err := messagecontent.Normalize(messagecontent.FromText(incoming.Text).Parts)

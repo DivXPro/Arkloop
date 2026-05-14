@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"arkloop/services/api/internal/data"
 
@@ -242,18 +243,18 @@ func DispatchInbound(ctx context.Context, tx pgx.Tx, req InboundDispatchRequest)
 }
 
 type inboundThreadConfig struct {
-	DefaultModel            string `json:"default_model,omitempty"`
+	ChatModel               string `json:"chat_model,omitempty"`
 	ReasoningMode           string `json:"reasoning_mode,omitempty"`
 	HeartbeatEnabled        *bool  `json:"heartbeat_enabled,omitempty"`
 	HeartbeatIntervalMinute int    `json:"heartbeat_interval_minutes,omitempty"`
 	HeartbeatModel          string `json:"heartbeat_model,omitempty"`
 }
 
-func ensureInboundThreadDefaultModel(ctx context.Context, db data.Querier, threadID uuid.UUID, defaultModel string) error {
+func ensureInboundThreadChatModel(ctx context.Context, db data.Querier, accountID uuid.UUID, threadID uuid.UUID, channelDefaultModel string) error {
 	if db == nil || threadID == uuid.Nil {
 		return nil
 	}
-	model := strings.TrimSpace(defaultModel)
+	model := strings.TrimSpace(resolveNewThreadChatModel(ctx, db, accountID, channelDefaultModel))
 	if model == "" {
 		return nil
 	}
@@ -262,11 +263,45 @@ func ensureInboundThreadDefaultModel(ctx context.Context, db data.Querier, threa
 	if err != nil {
 		return err
 	}
-	if existing, _ := config["default_model"].(string); strings.TrimSpace(existing) != "" {
+	if existing, _ := config["chat_model"].(string); strings.TrimSpace(existing) != "" {
 		return nil
 	}
-	config["default_model"] = model
+	config["chat_model"] = model
 	return writeInboundThreadConfigMap(ctx, db, threadID, config)
+}
+
+func extractChannelDefaultModel(ch data.Channel) string {
+	if ch.ConfigJSON == nil {
+		return ""
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(ch.ConfigJSON, &cfg); err != nil {
+		return ""
+	}
+	if dm, ok := cfg["default_model"].(string); ok {
+		return strings.TrimSpace(dm)
+	}
+	return ""
+}
+
+func resolveNewThreadChatModel(ctx context.Context, db data.Querier, accountID uuid.UUID, channelDefaultModel string) string {
+	if db == nil || accountID == uuid.Nil {
+		return strings.TrimSpace(channelDefaultModel)
+	}
+	var model string
+	if err := db.QueryRow(ctx, `
+		SELECT COALESCE(settings_json->>'new_thread_chat_model', '')
+		  FROM accounts
+		 WHERE id = $1
+		   AND deleted_at IS NULL`,
+		accountID,
+	).Scan(&model); err != nil {
+		return strings.TrimSpace(channelDefaultModel)
+	}
+	if strings.TrimSpace(model) != "" {
+		return strings.TrimSpace(model)
+	}
+	return strings.TrimSpace(channelDefaultModel)
 }
 
 func readInboundThreadConfig(ctx context.Context, db data.Querier, threadID uuid.UUID) (inboundThreadConfig, bool, error) {
@@ -342,7 +377,7 @@ func getInboundThreadModelPreference(ctx context.Context, db data.Querier, threa
 	if err != nil || !ok {
 		return "", "", ok, err
 	}
-	return strings.TrimSpace(cfg.DefaultModel), strings.TrimSpace(cfg.ReasoningMode), true, nil
+	return strings.TrimSpace(cfg.ChatModel), strings.TrimSpace(cfg.ReasoningMode), true, nil
 }
 
 func updateInboundThreadModelPreference(ctx context.Context, db data.Querier, threadID uuid.UUID, model string, reasoningMode string) error {
@@ -351,10 +386,11 @@ func updateInboundThreadModelPreference(ctx context.Context, db data.Querier, th
 		return err
 	}
 	if strings.TrimSpace(model) == "" {
-		delete(config, "default_model")
+		delete(config, "chat_model")
 	} else {
-		config["default_model"] = strings.TrimSpace(model)
+		config["chat_model"] = strings.TrimSpace(model)
 	}
+	delete(config, "default_model")
 	if strings.TrimSpace(reasoningMode) == "" || strings.EqualFold(strings.TrimSpace(reasoningMode), "off") {
 		delete(config, "reasoning_mode")
 	} else {
@@ -391,4 +427,59 @@ func updateInboundThreadHeartbeatConfig(ctx context.Context, db data.Querier, th
 		config["heartbeat_model"] = strings.TrimSpace(model)
 	}
 	return writeInboundThreadConfigMap(ctx, db, threadID, config)
+}
+
+func resetGroupHeartbeatCooldownForMessage(
+	ctx context.Context,
+	tx pgx.Tx,
+	scheduledTriggersRepo *data.ScheduledTriggersRepository,
+	channelGroupThreadsRepo *data.ChannelGroupThreadsRepository,
+	channel data.Channel,
+	personaID *uuid.UUID,
+	platformChatID string,
+	now time.Time,
+) (bool, error) {
+	if scheduledTriggersRepo == nil || channelGroupThreadsRepo == nil || personaID == nil || *personaID == uuid.Nil {
+		return false, nil
+	}
+	platformChatID = strings.TrimSpace(platformChatID)
+	if platformChatID == "" {
+		return false, nil
+	}
+
+	threadMap, err := channelGroupThreadsRepo.WithTx(tx).GetByBinding(ctx, channel.ID, platformChatID, *personaID)
+	if err != nil {
+		return false, err
+	}
+	if threadMap == nil || threadMap.ThreadID == uuid.Nil {
+		return false, nil
+	}
+
+	existing, err := scheduledTriggersRepo.GetHeartbeatForThread(ctx, tx, threadMap.ThreadID)
+	if err != nil {
+		return false, err
+	}
+	if existing == nil {
+		return false, nil
+	}
+
+	burstStart := now
+	if existing.LastUserMsgAt != nil && now.Sub(*existing.LastUserMsgAt) <= 30*time.Second && existing.BurstStartAt != nil {
+		burstStart = *existing.BurstStartAt
+	}
+
+	timeInBurst := now.Sub(burstStart)
+	delaySec := 15.0 - timeInBurst.Seconds()/2
+	if delaySec < 3 {
+		delaySec = 3
+	}
+	nextFire := now.Add(time.Duration(delaySec) * time.Second)
+	if existing.NextFireAt.After(now) && existing.NextFireAt.Before(nextFire) {
+		nextFire = existing.NextFireAt
+	}
+
+	if err := scheduledTriggersRepo.ResetCooldownForMessageForThread(ctx, tx, threadMap.ThreadID, nextFire, now, burstStart); err != nil {
+		return false, err
+	}
+	return true, nil
 }

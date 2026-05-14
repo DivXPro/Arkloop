@@ -2,7 +2,6 @@ package accountapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -424,16 +423,8 @@ func (r channelInboundBurstRunner) recoverBatch(
 		return err
 	}
 
-	var chCfg struct {
-		DefaultModel string `json:"default_model,omitempty"`
-	}
-	if len(ch.ConfigJSON) > 0 {
-		_ = json.Unmarshal(ch.ConfigJSON, &chCfg)
-	}
-	if strings.TrimSpace(chCfg.DefaultModel) != "" {
-		if err := ensureInboundThreadDefaultModel(ctx, tx, openBatch.ThreadID, strings.TrimSpace(chCfg.DefaultModel)); err != nil {
-			return err
-		}
+	if err := ensureInboundThreadChatModel(ctx, tx, ch.AccountID, openBatch.ThreadID, extractChannelDefaultModel(ch)); err != nil {
+		return err
 	}
 
 	dispatchResult, err := DispatchInbound(ctx, tx, InboundDispatchRequest{

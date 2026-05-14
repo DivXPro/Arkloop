@@ -15,9 +15,9 @@ import (
 	"arkloop/services/api/internal/entitlement"
 	"arkloop/services/api/internal/observability"
 	"arkloop/services/shared/discordbot"
-	"arkloop/services/shared/runkind"
 	"arkloop/services/shared/eventbus"
 	"arkloop/services/shared/pgnotify"
+	"arkloop/services/shared/runkind"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/google/uuid"
@@ -607,7 +607,7 @@ func (c discordConnector) persistDiscordInboundStageA(
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureInboundThreadDefaultModel(ctx, tx, threadID, resolveDiscordDefaultModel(ch.ConfigJSON)); err != nil {
+	if err := ensureInboundThreadChatModel(ctx, tx, ch.AccountID, threadID, extractChannelDefaultModel(ch)); err != nil {
 		return nil, err
 	}
 
@@ -828,17 +828,8 @@ func buildDiscordRunStartedData(
 	return buildChannelRunStartedData(
 		personaRef,
 		"",
-		"",
 		buildDiscordChannelDeliveryPayload(channelID, channelIdentityID, messageCtx),
 	)
-}
-
-func resolveDiscordDefaultModel(raw json.RawMessage) string {
-	cfg, err := resolveDiscordConfig("discord", raw)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(cfg.DefaultModel)
 }
 
 func buildDiscordChannelDeliveryPayload(channelID uuid.UUID, channelIdentityID uuid.UUID, messageCtx discordMessageContext) map[string]any {
@@ -1052,7 +1043,7 @@ func handleDiscordCommand(
 		if nameArg != "" {
 			rawText = "/model " + nameArg
 		}
-		replyText, _, err := handleTelegramPreferenceCommand(ctx, tx, channel.AccountID, threadID, rawText, nil)
+		replyText, _, err := handlePreferenceCommand(ctx, tx, channel.AccountID, threadID, rawText, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1077,7 +1068,7 @@ func handleDiscordCommand(
 		if levelArg != "" {
 			rawText = "/think " + levelArg
 		}
-		replyText, _, err := handleTelegramPreferenceCommand(ctx, tx, channel.AccountID, threadID, rawText, nil)
+		replyText, _, err := handlePreferenceCommand(ctx, tx, channel.AccountID, threadID, rawText, nil)
 		if err != nil {
 			return nil, err
 		}

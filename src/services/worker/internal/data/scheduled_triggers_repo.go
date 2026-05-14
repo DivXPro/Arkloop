@@ -19,18 +19,19 @@ var ErrHeartbeatSnapshotStale = errors.New("heartbeat snapshot stale")
 
 // ScheduledTriggerRow 是 scheduled_triggers 表的一行。
 type ScheduledTriggerRow struct {
-	ID                uuid.UUID
-	ChannelID         uuid.UUID
-	ChannelIdentityID uuid.UUID
-	ThreadID          *uuid.UUID
-	PersonaKey        string
-	AccountID         uuid.UUID
-	Model             string
-	IntervalMin       int
-	NextFireAt        time.Time
-	CooldownLevel     int
-	LastUserMsgAt     *time.Time
-	BurstStartAt      *time.Time
+	ID                    uuid.UUID
+	ChannelID             uuid.UUID
+	ChannelIdentityID     uuid.UUID
+	ThreadID              *uuid.UUID
+	PersonaKey            string
+	AccountID             uuid.UUID
+	Model                 string
+	ResolveModelAtRuntime bool
+	IntervalMin           int
+	NextFireAt            time.Time
+	CooldownLevel         int
+	LastUserMsgAt         *time.Time
+	BurstStartAt          *time.Time
 }
 
 func (ScheduledTriggersRepository) UpsertHeartbeatForThread(
@@ -42,6 +43,7 @@ func (ScheduledTriggersRepository) UpsertHeartbeatForThread(
 	threadID uuid.UUID,
 	personaKey string,
 	model string,
+	resolveModelAtRuntime bool,
 	intervalMin int,
 ) error {
 	if threadID == uuid.Nil {
@@ -66,8 +68,8 @@ func (ScheduledTriggersRepository) UpsertHeartbeatForThread(
 	}
 	_, err := db.Exec(ctx, `
 		INSERT INTO scheduled_triggers
-		    (id, channel_id, channel_identity_id, thread_id, persona_key, account_id, model, interval_min, next_fire_at)
-		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8)
+		    (id, channel_id, channel_identity_id, thread_id, persona_key, account_id, model, resolve_model_at_runtime, interval_min, next_fire_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (thread_id) WHERE thread_id IS NOT NULL DO UPDATE
 		    SET thread_id      = excluded.thread_id,
 		        channel_id     = excluded.channel_id,
@@ -75,10 +77,11 @@ func (ScheduledTriggersRepository) UpsertHeartbeatForThread(
 		        persona_key    = excluded.persona_key,
 		        account_id     = excluded.account_id,
 		        model          = excluded.model,
+		        resolve_model_at_runtime = excluded.resolve_model_at_runtime,
 		        interval_min   = excluded.interval_min,
 		        cooldown_level = 0,
 		        updated_at     = now()`,
-		channelID, channelIdentityID, threadID, personaKey, accountID, model, intervalMin, nextFire,
+		channelID, channelIdentityID, threadID, personaKey, accountID, model, resolveModelAtRuntime, intervalMin, nextFire,
 	)
 	return err
 }
@@ -143,7 +146,7 @@ func (ScheduledTriggersRepository) GetHeartbeat(
 
 	var row ScheduledTriggerRow
 	err := db.QueryRow(ctx, `
-		SELECT id, channel_id, channel_identity_id, thread_id, persona_key, account_id, model, interval_min, next_fire_at, cooldown_level, last_user_msg_at, burst_start_at
+		SELECT id, channel_id, channel_identity_id, thread_id, persona_key, account_id, model, resolve_model_at_runtime, interval_min, next_fire_at, cooldown_level, last_user_msg_at, burst_start_at
 		  FROM scheduled_triggers
 		 WHERE channel_id = $1
 		   AND channel_identity_id = $2
@@ -158,6 +161,7 @@ func (ScheduledTriggersRepository) GetHeartbeat(
 		&row.PersonaKey,
 		&row.AccountID,
 		&row.Model,
+		&row.ResolveModelAtRuntime,
 		&row.IntervalMin,
 		&row.NextFireAt,
 		&row.CooldownLevel,
@@ -183,7 +187,7 @@ func (ScheduledTriggersRepository) GetHeartbeatForThread(
 	}
 	var row ScheduledTriggerRow
 	err := db.QueryRow(ctx, `
-		SELECT id, channel_id, channel_identity_id, thread_id, persona_key, account_id, model, interval_min, next_fire_at, cooldown_level, last_user_msg_at, burst_start_at
+		SELECT id, channel_id, channel_identity_id, thread_id, persona_key, account_id, model, resolve_model_at_runtime, interval_min, next_fire_at, cooldown_level, last_user_msg_at, burst_start_at
 		  FROM scheduled_triggers
 		 WHERE thread_id = $1`,
 		threadID,
@@ -195,6 +199,7 @@ func (ScheduledTriggersRepository) GetHeartbeatForThread(
 		&row.PersonaKey,
 		&row.AccountID,
 		&row.Model,
+		&row.ResolveModelAtRuntime,
 		&row.IntervalMin,
 		&row.NextFireAt,
 		&row.CooldownLevel,
@@ -330,6 +335,35 @@ func (ScheduledTriggersRepository) ResetHeartbeatNextFire(
 	return nextFire, nil
 }
 
+func (ScheduledTriggersRepository) ResetHeartbeatNextFireForThread(
+	ctx context.Context,
+	db DB,
+	threadID uuid.UUID,
+	intervalMin int,
+) (time.Time, error) {
+	if threadID == uuid.Nil {
+		return time.Time{}, errors.New("thread_id must not be empty")
+	}
+	intervalMin = normalizeHeartbeatInterval(intervalMin)
+	nextFire := time.Now().UTC().Add(time.Duration(intervalMin) * time.Minute)
+	cmd, err := db.Exec(ctx, `
+		UPDATE scheduled_triggers
+		   SET interval_min = $1,
+		       next_fire_at = $2,
+		       cooldown_level = 0,
+		       updated_at = now()
+		 WHERE thread_id = $3`,
+		intervalMin, nextFire, threadID,
+	)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if cmd.RowsAffected() == 0 {
+		return time.Time{}, fmt.Errorf("reset heartbeat next fire: thread_id %s not found", threadID)
+	}
+	return nextFire, nil
+}
+
 // DeleteHeartbeat 删除某个 channel identity 的 heartbeat 调度。
 func (ScheduledTriggersRepository) DeleteHeartbeat(
 	ctx context.Context,
@@ -360,79 +394,27 @@ func (ScheduledTriggersRepository) DeleteHeartbeatForThread(
 	return err
 }
 
-// HeartbeatIdentityConfig 是从 channel_identities 读到的 heartbeat 配置。
+// HeartbeatIdentityConfig 是 thread 级 heartbeat 配置。
 type HeartbeatIdentityConfig struct {
 	Enabled         bool
 	IntervalMinutes int
 	Model           string
 }
 
-func GetDMBindingHeartbeatConfig(ctx context.Context, db DB, channelID uuid.UUID, identityID uuid.UUID) (*HeartbeatIdentityConfig, error) {
-	var enabledInt, interval int
-	var model string
+func GetChannelIdentityIDBySubject(ctx context.Context, db DB, channelType, platformSubjectID string) (uuid.UUID, error) {
+	var idStr string
 	err := db.QueryRow(ctx,
-		`SELECT heartbeat_enabled, heartbeat_interval_minutes, heartbeat_model
-		   FROM channel_identity_links
-		  WHERE channel_id = $1 AND channel_identity_id = $2`,
-		channelID,
-		identityID,
-	).Scan(&enabledInt, &interval, &model)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("get dm binding heartbeat config: %w", err)
-	}
-	return &HeartbeatIdentityConfig{
-		Enabled:         enabledInt != 0,
-		IntervalMinutes: interval,
-		Model:           model,
-	}, nil
-}
-
-// GetGroupHeartbeatConfig 通过 channel_type + platform_subject_id 查群 identity 的 heartbeat 配置（cloud）。
-// 返回 identityID 供 UpsertHeartbeat 使用。
-func GetGroupHeartbeatConfig(ctx context.Context, db DB, channelType, platformSubjectID string) (uuid.UUID, *HeartbeatIdentityConfig, error) {
-	var enabledInt, interval int
-	var model, idStr string
-	err := db.QueryRow(ctx,
-		`SELECT id, heartbeat_enabled, heartbeat_interval_minutes, heartbeat_model
+		`SELECT id
 		   FROM channel_identities
 		  WHERE channel_type = $1 AND platform_subject_id = $2`,
 		channelType, platformSubjectID,
-	).Scan(&idStr, &enabledInt, &interval, &model)
+	).Scan(&idStr)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return uuid.Nil, nil, nil
+			return uuid.Nil, nil
 		}
-		return uuid.Nil, nil, fmt.Errorf("get group heartbeat config: %w", err)
+		return uuid.Nil, fmt.Errorf("get channel identity id: %w", err)
 	}
 	identityID, _ := uuid.Parse(idStr)
-	return identityID, &HeartbeatIdentityConfig{
-		Enabled:         enabledInt != 0,
-		IntervalMinutes: interval,
-		Model:           model,
-	}, nil
-}
-
-// GetChannelIdentityHeartbeatConfig 从 channel_identities 读取 heartbeat 配置（cloud）。
-func GetChannelIdentityHeartbeatConfig(ctx context.Context, db DB, identityID uuid.UUID) (*HeartbeatIdentityConfig, error) {
-	var enabledInt, interval int
-	var model string
-	err := db.QueryRow(ctx,
-		`SELECT heartbeat_enabled, heartbeat_interval_minutes, heartbeat_model
-		   FROM channel_identities WHERE id = $1`,
-		identityID,
-	).Scan(&enabledInt, &interval, &model)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("get channel identity heartbeat config: %w", err)
-	}
-	return &HeartbeatIdentityConfig{
-		Enabled:         enabledInt != 0,
-		IntervalMinutes: interval,
-		Model:           model,
-	}, nil
+	return identityID, nil
 }

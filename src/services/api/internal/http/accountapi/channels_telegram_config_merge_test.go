@@ -30,8 +30,8 @@ func TestMergeTelegramChannelConfigJSONPatch_preservesBotFieldsWhenPatchOmitsThe
 	if got["bot_username"] != "my_bot" {
 		t.Fatalf("bot_username: %v", got["bot_username"])
 	}
-	if got["default_model"] != "new^m" {
-		t.Fatalf("default_model: %v", got["default_model"])
+	if _, ok := got["default_model"]; ok {
+		t.Fatalf("default_model should be removed: %v", got["default_model"])
 	}
 }
 

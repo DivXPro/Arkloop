@@ -3325,7 +3325,7 @@ func TestDesktopChannelContextAppliesThreadRunOverrides(t *testing.T) {
 			args: []any{projectID.String(), accountID.String()},
 		},
 		{
-			sql:  `INSERT INTO threads (id, account_id, project_id, is_private, config_json) VALUES ($1, $2, $3, TRUE, '{"default_model":"gpt-desktop","reasoning_mode":"high"}')`,
+			sql:  `INSERT INTO threads (id, account_id, project_id, is_private, config_json) VALUES ($1, $2, $3, TRUE, '{"chat_model":"gpt-desktop","reasoning_mode":"high"}')`,
 			args: []any{threadID.String(), accountID.String(), projectID.String()},
 		},
 		{

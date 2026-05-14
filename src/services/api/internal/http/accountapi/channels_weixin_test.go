@@ -39,13 +39,13 @@ func TestCurrentWeixinChannelReloadsLatestConfig(t *testing.T) {
 		t.Fatalf("create account: %v", err)
 	}
 
-	oldConfig := json.RawMessage(`{"default_model":"old^model"}`)
+	oldConfig := json.RawMessage(`{"base_url":"https://old.example"}`)
 	created, err := channelsRepo.Create(ctx, uuid.Nil, account.ID, "weixin", nil, nil, nil, "", "", oldConfig)
 	if err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
 	active := true
-	staleConfig := json.RawMessage(`{"default_model":"old^model"}`)
+	staleConfig := json.RawMessage(`{"base_url":"https://old.example"}`)
 	stale, err := channelsRepo.Update(ctx, created.ID, account.ID, data.ChannelUpdate{
 		IsActive:   &active,
 		ConfigJSON: &staleConfig,
@@ -53,7 +53,7 @@ func TestCurrentWeixinChannelReloadsLatestConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("activate channel: %v", err)
 	}
-	newConfig := json.RawMessage(`{"default_model":"new^model"}`)
+	newConfig := json.RawMessage(`{"base_url":"https://new.example"}`)
 	if _, err := channelsRepo.Update(ctx, created.ID, account.ID, data.ChannelUpdate{ConfigJSON: &newConfig}); err != nil {
 		t.Fatalf("update channel config: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCurrentWeixinChannelReloadsLatestConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve config: %v", err)
 	}
-	if cfg.DefaultModel != "new^model" {
-		t.Fatalf("expected latest default model, got %q", cfg.DefaultModel)
+	if cfg.BaseURL != "https://new.example" {
+		t.Fatalf("expected latest base_url, got %q", cfg.BaseURL)
 	}
 }

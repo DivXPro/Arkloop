@@ -3816,3 +3816,59 @@ CREATE INDEX idx_mcp_oauth_flows_account_install
 
 CREATE INDEX idx_mcp_oauth_flows_expires
     ON mcp_oauth_flows (expires_at);
+
+
+-- === 00196_thread_centric_model_unification.sql ===
+UPDATE threads
+   SET config_json = (config_json - 'default_model')
+                  || jsonb_build_object('chat_model', config_json->>'default_model')
+ WHERE config_json ? 'default_model';
+
+UPDATE threads AS t
+   SET config_json = jsonb_set(COALESCE(t.config_json, '{}'::jsonb), '{chat_model}', ch.config_json->'default_model')
+  FROM channels AS ch, channel_group_threads AS cgt
+ WHERE cgt.channel_id = ch.id
+   AND cgt.thread_id = t.id
+   AND NOT t.config_json ? 'chat_model'
+   AND ch.config_json ? 'default_model'
+   AND ch.config_json->>'default_model' <> ''
+   AND t.deleted_at IS NULL;
+
+UPDATE threads AS t
+   SET config_json = jsonb_set(COALESCE(t.config_json, '{}'::jsonb), '{chat_model}', ch.config_json->'default_model')
+  FROM channels AS ch, channel_dm_threads AS cdt
+ WHERE cdt.channel_id = ch.id
+   AND cdt.thread_id = t.id
+   AND NOT t.config_json ? 'chat_model'
+   AND ch.config_json ? 'default_model'
+   AND ch.config_json->>'default_model' <> ''
+   AND t.deleted_at IS NULL;
+
+ALTER TABLE scheduled_triggers
+    ADD COLUMN IF NOT EXISTS resolve_model_at_runtime BOOLEAN NOT NULL DEFAULT FALSE;
+
+UPDATE scheduled_triggers AS st
+   SET model = COALESCE(NULLIF(btrim(t.config_json->>'heartbeat_model'), ''), ''),
+       resolve_model_at_runtime = COALESCE(NULLIF(btrim(t.config_json->>'heartbeat_model'), ''), '') = ''
+  FROM threads AS t
+ WHERE st.thread_id = t.id
+   AND st.trigger_kind = 'heartbeat'
+   AND st.thread_id IS NOT NULL;
+
+
+-- === 00197_drop_legacy_channel_model_config.sql ===
+UPDATE channels
+   SET config_json = config_json - 'default_model'
+ WHERE config_json ? 'default_model';
+
+ALTER TABLE IF EXISTS channel_identities
+    DROP COLUMN IF EXISTS preferred_model,
+    DROP COLUMN IF EXISTS reasoning_mode,
+    DROP COLUMN IF EXISTS heartbeat_enabled,
+    DROP COLUMN IF EXISTS heartbeat_interval_minutes,
+    DROP COLUMN IF EXISTS heartbeat_model;
+
+ALTER TABLE IF EXISTS channel_identity_links
+    DROP COLUMN IF EXISTS heartbeat_enabled,
+    DROP COLUMN IF EXISTS heartbeat_interval_minutes,
+    DROP COLUMN IF EXISTS heartbeat_model;

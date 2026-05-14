@@ -22,11 +22,11 @@ type createBindCodeRequest struct {
 }
 
 type bindCodeResponse struct {
-	ID        string  `json:"id"`
-	Token     string  `json:"token"`
+	ID          string  `json:"id"`
+	Token       string  `json:"token"`
 	ChannelType *string `json:"channel_type"`
-	ExpiresAt string  `json:"expires_at"`
-	CreatedAt string  `json:"created_at"`
+	ExpiresAt   string  `json:"expires_at"`
+	CreatedAt   string  `json:"created_at"`
 }
 
 type channelIdentityResponse struct {
@@ -245,13 +245,6 @@ func unbindChannelIdentity(
 	if err := channelIdentityLinksRepo.WithTx(tx).DeleteByIdentity(r.Context(), identityID); err != nil {
 		httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
 		return
-	}
-	triggerRepo := data.ScheduledTriggersRepository{}
-	for _, binding := range bindings {
-		if err := triggerRepo.DeleteHeartbeat(r.Context(), tx, binding.ChannelID, binding.ChannelIdentityID); err != nil {
-			httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
-			return
-		}
 	}
 	if err := identitiesRepo.WithTx(tx).UpdateUserID(r.Context(), identityID, nil); err != nil {
 		httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)

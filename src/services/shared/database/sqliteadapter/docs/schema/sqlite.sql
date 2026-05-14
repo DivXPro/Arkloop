@@ -81,6 +81,15 @@ CREATE INDEX idx_desktop_memory_entries_user
 CREATE INDEX idx_external_thread_links_provider_external
     ON external_thread_links (provider, external_thread_id);
 
+CREATE INDEX idx_mcp_oauth_connections_account_profile
+    ON mcp_oauth_connections (account_id, profile_ref);
+
+CREATE INDEX idx_mcp_oauth_flows_account_install
+    ON mcp_oauth_flows (account_id, profile_ref, install_id);
+
+CREATE INDEX idx_mcp_oauth_flows_expires
+    ON mcp_oauth_flows (expires_at);
+
 CREATE INDEX idx_outbox_cleanup ON channel_delivery_outbox (status, updated_at)
     WHERE status IN ('sent', 'dead');
 
@@ -95,10 +104,30 @@ CREATE INDEX idx_plan_entitlements_plan_id ON plan_entitlements(plan_id);
 CREATE INDEX idx_platform_skill_overrides_profile
     ON profile_platform_skill_overrides (profile_ref);
 
+CREATE INDEX idx_plugin_enablements_account_plugin
+    ON plugin_enablements (account_id, plugin_id, plugin_version);
+
+CREATE INDEX idx_plugin_enablements_workspace
+    ON plugin_enablements (account_id, workspace_ref, desired_enabled);
+
+CREATE INDEX idx_plugin_packages_account_active
+    ON plugin_packages (account_id, is_active, plugin_id);
+
+CREATE INDEX idx_plugin_runtime_state_account_plugin
+    ON plugin_runtime_state (account_id, plugin_id, plugin_version);
+
 CREATE INDEX idx_profile_mcp_installs_account_profile
     ON profile_mcp_installs (account_id, profile_ref);
 
+CREATE INDEX idx_profile_mcp_installs_owner_plugin
+    ON profile_mcp_installs (account_id, owner_plugin_id)
+    WHERE owner_plugin_id IS NOT NULL;
+
 CREATE INDEX idx_profile_registries_org_id ON profile_registries(account_id);
+
+CREATE INDEX idx_profile_skill_installs_owner_plugin
+    ON profile_skill_installs (account_id, owner_plugin_id)
+    WHERE owner_plugin_id IS NOT NULL;
 
 CREATE INDEX idx_profile_skill_installs_profile_ref
     ON profile_skill_installs (account_id, profile_ref);
@@ -112,6 +141,10 @@ CREATE INDEX idx_replacement_supersession_edges_replacement
 
 CREATE INDEX idx_replacement_supersession_edges_thread
     ON replacement_supersession_edges (thread_id, created_at DESC);
+
+CREATE INDEX idx_scheduled_triggers_thread_id
+    ON scheduled_triggers (thread_id)
+    WHERE thread_id IS NOT NULL;
 
 CREATE UNIQUE INDEX idx_shell_sessions_org_profile_binding_type_unique
     ON shell_sessions (account_id, profile_ref, session_type, default_binding_key)
@@ -280,10 +313,20 @@ CREATE INDEX run_pipeline_events_run_id_idx ON run_pipeline_events(run_id);
 
 CREATE INDEX scheduled_jobs_account_id_idx ON scheduled_jobs (account_id);
 
-CREATE UNIQUE INDEX scheduled_triggers_job_id_uniq ON scheduled_triggers (job_id) WHERE job_id IS NOT NULL;
+CREATE UNIQUE INDEX scheduled_triggers_identity_target_idx
+    ON scheduled_triggers (channel_id, channel_identity_id)
+    WHERE thread_id IS NULL;
+
+CREATE UNIQUE INDEX scheduled_triggers_job_id_uniq
+    ON scheduled_triggers (job_id)
+    WHERE job_id IS NOT NULL;
 
 CREATE INDEX scheduled_triggers_next_fire_at_idx
     ON scheduled_triggers (next_fire_at);
+
+CREATE UNIQUE INDEX scheduled_triggers_thread_target_idx
+    ON scheduled_triggers (thread_id)
+    WHERE thread_id IS NOT NULL;
 
 CREATE UNIQUE INDEX secrets_platform_name_idx
     ON secrets (name)
@@ -515,7 +558,7 @@ CREATE TABLE channel_identities (
     avatar_url          TEXT,
     metadata            TEXT NOT NULL DEFAULT '{}',
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at          TEXT NOT NULL DEFAULT (datetime('now')), heartbeat_enabled INTEGER NOT NULL DEFAULT 0, heartbeat_interval_minutes INTEGER NOT NULL DEFAULT 30, heartbeat_model TEXT NOT NULL DEFAULT '', preferred_model TEXT NOT NULL DEFAULT '', reasoning_mode TEXT NOT NULL DEFAULT '',
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (channel_type, platform_subject_id)
 );
 
@@ -534,9 +577,6 @@ CREATE TABLE "channel_identity_links" (
     id                  TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
     channel_id          TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
     channel_identity_id TEXT NOT NULL REFERENCES channel_identities(id) ON DELETE CASCADE,
-    heartbeat_enabled   INTEGER NOT NULL DEFAULT 0,
-    heartbeat_interval_minutes INTEGER NOT NULL DEFAULT 30,
-    heartbeat_model     TEXT NOT NULL DEFAULT '',
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (channel_id, channel_identity_id)
@@ -756,6 +796,42 @@ CREATE TABLE mcp_configs (
     UNIQUE (account_id, name)
 );
 
+CREATE TABLE mcp_oauth_connections (
+    id                            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+    account_id                    TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    profile_ref                   TEXT NOT NULL REFERENCES profile_registries(profile_ref) ON DELETE CASCADE,
+    install_id                    TEXT NOT NULL REFERENCES profile_mcp_installs(id) ON DELETE CASCADE,
+    token_secret_id               TEXT NOT NULL REFERENCES secrets(id) ON DELETE CASCADE,
+    client_id                     TEXT,
+    client_secret_secret_id       TEXT REFERENCES secrets(id) ON DELETE SET NULL,
+    registration_client_uri       TEXT,
+    registration_access_secret_id TEXT REFERENCES secrets(id) ON DELETE SET NULL,
+    scope                         TEXT,
+    expires_at                    TEXT,
+    created_at                    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at                    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (account_id, profile_ref, install_id)
+);
+
+CREATE TABLE mcp_oauth_flows (
+    id                      TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+    account_id              TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    profile_ref             TEXT NOT NULL REFERENCES profile_registries(profile_ref) ON DELETE CASCADE,
+    install_id              TEXT NOT NULL REFERENCES profile_mcp_installs(id) ON DELETE CASCADE,
+    state                   TEXT NOT NULL UNIQUE,
+    redirect_uri            TEXT NOT NULL,
+    authorization_url       TEXT NOT NULL,
+    code_verifier_secret_id TEXT NOT NULL REFERENCES secrets(id) ON DELETE CASCADE,
+    client_id               TEXT,
+    client_secret_secret_id TEXT REFERENCES secrets(id) ON DELETE SET NULL,
+    scope                   TEXT,
+    expires_at              TEXT NOT NULL,
+    completed_at            TEXT,
+    connection_id           TEXT REFERENCES mcp_oauth_connections(id) ON DELETE SET NULL,
+    created_at              TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE messages (
     id                 TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
     thread_id          TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
@@ -843,6 +919,52 @@ CREATE TABLE platform_settings (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE plugin_enablements (
+    id                 TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+    account_id         TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    package_id         TEXT NOT NULL REFERENCES plugin_packages(id) ON DELETE CASCADE,
+    plugin_id          TEXT NOT NULL,
+    plugin_version     TEXT NOT NULL,
+    profile_ref        TEXT NOT NULL REFERENCES profile_registries(profile_ref) ON DELETE CASCADE,
+    workspace_ref      TEXT NOT NULL REFERENCES workspace_registries(workspace_ref) ON DELETE CASCADE,
+    desired_enabled    INTEGER NOT NULL DEFAULT 0,
+    enabled_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    settings_json      TEXT NOT NULL DEFAULT '{}',
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (account_id, package_id, profile_ref, workspace_ref)
+);
+
+CREATE TABLE plugin_packages (
+    id                   TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+    account_id           TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    plugin_id            TEXT NOT NULL,
+    version              TEXT NOT NULL,
+    display_name         TEXT NOT NULL,
+    description          TEXT,
+    manifest_json        TEXT NOT NULL,
+    settings_schema_json TEXT NOT NULL DEFAULT '{}',
+    source_kind          TEXT NOT NULL DEFAULT 'manifest',
+    source_uri           TEXT,
+    is_active            INTEGER NOT NULL DEFAULT 1,
+    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (account_id, plugin_id, version)
+);
+
+CREATE TABLE plugin_runtime_state (
+    account_id     TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    package_id     TEXT NOT NULL REFERENCES plugin_packages(id) ON DELETE CASCADE,
+    plugin_id      TEXT NOT NULL,
+    plugin_version TEXT NOT NULL,
+    profile_ref    TEXT NOT NULL REFERENCES profile_registries(profile_ref) ON DELETE CASCADE,
+    workspace_ref  TEXT NOT NULL REFERENCES workspace_registries(workspace_ref) ON DELETE CASCADE,
+    status         TEXT NOT NULL DEFAULT 'not_installed',
+    status_json    TEXT NOT NULL DEFAULT '{}',
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (account_id, package_id, profile_ref, workspace_ref)
+);
+
 CREATE TABLE profile_mcp_installs (
     id                     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
     install_key            TEXT NOT NULL,
@@ -861,7 +983,7 @@ CREATE TABLE profile_mcp_installs (
     last_error_message     TEXT,
     last_checked_at        TEXT,
     created_at             TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at             TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at             TEXT NOT NULL DEFAULT (datetime('now')), owner_plugin_id TEXT, owner_plugin_version TEXT,
     UNIQUE (account_id, profile_ref, install_key)
 );
 
@@ -903,7 +1025,7 @@ CREATE TABLE profile_skill_installs (
     skill_key     TEXT NOT NULL,
     version       TEXT NOT NULL,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now')), owner_plugin_id TEXT, owner_plugin_version TEXT,
     PRIMARY KEY (profile_ref, skill_key, version)
 );
 
@@ -1047,18 +1169,20 @@ CREATE TABLE "scheduled_triggers" (
     id                    TEXT PRIMARY KEY,
     channel_id            TEXT NOT NULL,
     channel_identity_id   TEXT NOT NULL,
-    thread_id             TEXT,
+    thread_id             TEXT REFERENCES threads(id) ON DELETE CASCADE,
     persona_key           TEXT NOT NULL,
     account_id            TEXT NOT NULL,
     model                 TEXT NOT NULL DEFAULT '',
     interval_min          INTEGER NOT NULL DEFAULT 30,
     next_fire_at          TEXT NOT NULL,
     created_at            TEXT NOT NULL,
-    updated_at            TEXT NOT NULL, trigger_kind TEXT NOT NULL DEFAULT 'heartbeat', job_id TEXT, cooldown_level INTEGER NOT NULL DEFAULT 0, last_user_msg_at TEXT, burst_start_at TEXT
-);
-
-CREATE UNIQUE INDEX scheduled_triggers_thread_target_idx ON scheduled_triggers (thread_id) WHERE thread_id IS NOT NULL;
-CREATE UNIQUE INDEX scheduled_triggers_identity_target_idx ON scheduled_triggers (channel_id, channel_identity_id) WHERE thread_id IS NULL;
+    updated_at            TEXT NOT NULL,
+    trigger_kind          TEXT NOT NULL DEFAULT 'heartbeat',
+    job_id                TEXT,
+    cooldown_level        INTEGER NOT NULL DEFAULT 0,
+    last_user_msg_at      TEXT,
+    burst_start_at        TEXT
+, resolve_model_at_runtime INTEGER NOT NULL DEFAULT 0);
 
 CREATE TABLE secrets (
     id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

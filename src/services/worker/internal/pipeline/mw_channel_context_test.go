@@ -259,7 +259,7 @@ func TestChannelContextMiddlewareAppliesThreadRunOverrides(t *testing.T) {
 	if _, err := pool.Exec(
 		context.Background(),
 		`INSERT INTO channel_identities (id, channel_type, external_user_id) VALUES ($1, 'telegram', '10001');
-		 INSERT INTO threads (id, config_json) VALUES ($2, '{"default_model":"gpt-thread","reasoning_mode":"high"}'::jsonb)`,
+		 INSERT INTO threads (id, config_json) VALUES ($2, '{"chat_model":"gpt-thread","reasoning_mode":"high"}'::jsonb)`,
 		identityID,
 		threadID,
 	); err != nil {

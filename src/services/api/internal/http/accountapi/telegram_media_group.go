@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"arkloop/services/api/internal/data"
+	"arkloop/services/shared/pgnotify"
 	"arkloop/services/shared/telegrambot"
 
 	"github.com/google/uuid"
@@ -238,36 +239,67 @@ func (c telegramConnector) processTelegramMediaGroupMerged(
 
 	if incoming.IsPrivate() {
 		trimmedCommandText := strings.TrimSpace(incoming.CommandText)
-		if handled, replyText, _, err := handleTelegramCommand(
-			ctx,
-			tx,
-			&ch,
-			identity,
-			trimmedCommandText,
-			telegramDMPlatformThreadID(incoming),
-			ch.AccountID,
+		handled, replyText, prefResult, personaResult, cancelRunID, err := DispatchChannelCommand(
+			ctx, tx, ch, *persona, identity,
+			trimmedCommandText, true, incoming.PlatformChatID,
 			c.entitlementSvc,
-			c.channelBindCodesRepo,
-			c.channelIdentitiesRepo,
-			c.channelIdentityLinksRepo,
-			c.channelDMThreadsRepo,
-			c.threadRepo,
-			c.runEventRepo.WithTx(tx),
-			c.pool,
-			c.personasRepo,
-			c.channelsRepo,
-		); err != nil {
+			ChannelCommandResolver{
+				ResolveThreadID: func(ctx context.Context, tx pgx.Tx, personaID, projectID uuid.UUID, isPrivate bool, chatID string) (uuid.UUID, error) {
+					return c.resolveTelegramThreadID(ctx, tx, ch, personaID, projectID, identity, incoming)
+				},
+				ResolveStartPayload: func() string {
+					parts := strings.Fields(trimmedCommandText)
+					if len(parts) > 1 && parts[0] == "/start" {
+						return parts[1]
+					}
+					return ""
+				},
+				BindCode: func() string {
+					parts := strings.Fields(trimmedCommandText)
+					if len(parts) >= 2 && parts[0] == "/bind" {
+						return parts[1]
+					}
+					return ""
+				},
+			},
+			ChannelCommandDeps{
+				ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+				ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+				ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+				PersonasRepo:             c.personasRepo,
+				RunEventRepo:             c.runEventRepo,
+				ChannelBindCodesRepo:     c.channelBindCodesRepo,
+				ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+				ThreadRepo:               c.threadRepo,
+			},
+			"Telegram",
+		)
+		if err != nil {
 			return err
-		} else if handled {
+		}
+		if handled {
 			if err := tx.Commit(ctx); err != nil {
 				return err
 			}
-			if c.telegramClient != nil && strings.TrimSpace(token) != "" {
+			if cancelRunID != uuid.Nil {
+				_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
+			}
+			if replyText != "" && c.telegramClient != nil && strings.TrimSpace(token) != "" {
 				sendCtx, sendCancel := context.WithTimeout(ctx, telegramRemoteRequestTimeout)
-				if _, err := c.telegramClient.SendMessage(sendCtx, token, telegrambot.SendMessageRequest{
+				req := telegrambot.SendMessageRequest{
 					ChatID: incoming.PlatformChatID,
 					Text:   replyText,
-				}); err != nil {
+				}
+				if prefResult != nil {
+					if kb := buildPreferenceKeyboard(prefResult); kb != nil {
+						req.ReplyMarkup = kb
+					}
+				} else if personaResult != nil {
+					if kb := buildPersonaKeyboard(personaResult); kb != nil {
+						req.ReplyMarkup = kb
+					}
+				}
+				if _, err := c.telegramClient.SendMessage(sendCtx, token, req); err != nil {
 					slog.Warn("telegram: failed to send command reply", "chat_id", incoming.PlatformChatID, "err", err)
 				}
 				sendCancel()
@@ -275,45 +307,98 @@ func (c telegramConnector) processTelegramMediaGroupMerged(
 			return nil
 		}
 	}
-
 	if !incoming.IsPrivate() && isTelegramGroupLikeChatType(incoming.ChatType) && c.channelGroupThreadsRepo != nil {
-		cmd, ok := telegramCommandBase(strings.TrimSpace(incoming.CommandText), botUsername)
-		if ok && cmd == "/new" {
-			var replyText string
-			if ch.PersonaID == nil || *ch.PersonaID == uuid.Nil {
-				replyText = "当前会话未配置 persona。"
-			} else if identity.UserID == nil {
-				replyText = "无权限。"
-			} else if c.telegramClient != nil && strings.TrimSpace(token) != "" {
-				tgUserID, _ := strconv.ParseInt(incoming.PlatformUserID, 10, 64)
-				member, err := c.telegramClient.GetChatMember(ctx, token, telegrambot.GetChatMemberRequest{
-					ChatID: incoming.PlatformChatID,
-					UserID: tgUserID,
-				})
-				if err != nil || member == nil || (member.Status != "creator" && member.Status != "administrator") {
-					replyText = "无权限。"
-				} else if err := c.channelGroupThreadsRepo.WithTx(tx).DeleteByBinding(ctx, ch.ID, incoming.PlatformChatID, *ch.PersonaID); err != nil {
-					return err
-				} else {
-					replyText = "已开启新会话。"
-				}
-			} else {
-				replyText = "已开启新会话。"
+		cmd, ok := slashCommandBase(strings.TrimSpace(incoming.CommandText), botUsername)
+		if ok {
+			cmdText := incoming.CommandText
+			if cmd == "/reset" {
+				cmdText = "/new"
 			}
-			if err := tx.Commit(ctx); err != nil {
+			groupIdentity, _ := c.channelIdentitiesRepo.WithTx(tx).Upsert(ctx, ch.ChannelType, incoming.PlatformChatID, nil, nil, nil)
+			commandIdentity := identity
+			if groupIdentity.ID != uuid.Nil && (strings.HasPrefix(cmd, "/heartbeat") || cmd == "/status" || cmd == "/models" || cmd == "/persona" || cmd == "/model" || strings.HasPrefix(cmd, "/think")) {
+				commandIdentity = groupIdentity
+			}
+			handled, replyText, prefResult, personaResult, cancelRunID, err := DispatchChannelCommand(
+				ctx, tx, ch, *persona, commandIdentity,
+				cmdText, false, incoming.PlatformChatID,
+				c.entitlementSvc,
+				ChannelCommandResolver{
+					ResolveThreadID: func(ctx context.Context, tx pgx.Tx, personaID, projectID uuid.UUID, isPrivate bool, chatID string) (uuid.UUID, error) {
+						return c.resolveTelegramThreadID(ctx, tx, ch, personaID, projectID, identity, incoming)
+					},
+					ResolveHeartbeatIdentity: func(ctx context.Context, tx pgx.Tx) (*data.ChannelIdentity, error) {
+						if groupIdentity.ID != uuid.Nil {
+							return &groupIdentity, nil
+						}
+						return nil, nil
+					},
+					IsGroupAdmin: func(ctx context.Context) bool {
+						if c.telegramClient == nil || strings.TrimSpace(token) == "" {
+							return true
+						}
+						tgUserID, _ := strconv.ParseInt(incoming.PlatformUserID, 10, 64)
+						member, err := c.telegramClient.GetChatMember(ctx, token, telegrambot.GetChatMemberRequest{
+							ChatID: incoming.PlatformChatID,
+							UserID: tgUserID,
+						})
+						if err != nil || member == nil {
+							return false
+						}
+						return member.Status == "creator" || member.Status == "administrator"
+					},
+					BindCode: func() string {
+						parts := strings.Fields(cmdText)
+						if len(parts) >= 2 && parts[0] == "/bind" {
+							return parts[1]
+						}
+						return ""
+					},
+				},
+				ChannelCommandDeps{
+					ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+					ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+					ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+					PersonasRepo:             c.personasRepo,
+					RunEventRepo:             c.runEventRepo,
+					ChannelBindCodesRepo:     c.channelBindCodesRepo,
+					ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+					ThreadRepo:               c.threadRepo,
+				},
+				"Telegram",
+			)
+			if err != nil {
 				return err
 			}
-			if c.telegramClient != nil && strings.TrimSpace(token) != "" {
-				sendCtx, sendCancel := context.WithTimeout(ctx, telegramRemoteRequestTimeout)
-				if _, err := c.telegramClient.SendMessage(sendCtx, token, telegrambot.SendMessageRequest{
-					ChatID: incoming.PlatformChatID,
-					Text:   replyText,
-				}); err != nil {
-					slog.Warn("telegram: failed to send /new command reply", "chat_id", incoming.PlatformChatID, "err", err)
+			if handled {
+				if err := tx.Commit(ctx); err != nil {
+					return err
 				}
-				sendCancel()
+				if cancelRunID != uuid.Nil {
+					_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
+				}
+				if replyText != "" && c.telegramClient != nil && strings.TrimSpace(token) != "" {
+					sendCtx, sendCancel := context.WithTimeout(ctx, telegramRemoteRequestTimeout)
+					req := telegrambot.SendMessageRequest{
+						ChatID: incoming.PlatformChatID,
+						Text:   replyText,
+					}
+					if prefResult != nil {
+						if kb := buildPreferenceKeyboard(prefResult); kb != nil {
+							req.ReplyMarkup = kb
+						}
+					} else if personaResult != nil {
+						if kb := buildPersonaKeyboard(personaResult); kb != nil {
+							req.ReplyMarkup = kb
+						}
+					}
+					if _, err := c.telegramClient.SendMessage(sendCtx, token, req); err != nil {
+						slog.Warn("telegram: failed to send command reply", "chat_id", incoming.PlatformChatID, "err", err)
+					}
+					sendCancel()
+				}
+				return nil
 			}
-			return nil
 		}
 	}
 
@@ -343,10 +428,8 @@ func (c telegramConnector) processTelegramMediaGroupMerged(
 	if err != nil {
 		return err
 	}
-	if cfg, cfgErr := resolveTelegramConfig(ch.ChannelType, ch.ConfigJSON); cfgErr == nil {
-		if err := ensureInboundThreadDefaultModel(ctx, tx, threadID, cfg.DefaultModel); err != nil {
-			return err
-		}
+	if err := ensureInboundThreadChatModel(ctx, tx, ch.AccountID, threadID, extractChannelDefaultModel(ch)); err != nil {
+		return err
 	}
 	timeCtx := c.resolveInboundTimeContext(ctx, ch, identity, incoming)
 	content, contentJSON, metadataJSON, err := buildTelegramStructuredMessageWithMedia(
