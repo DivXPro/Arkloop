@@ -472,10 +472,10 @@ export const MessageList = memo(function MessageList({
               )
             })()}
           {msgMeta?.resources && msgMeta.resources.length > 0 && (
-            <div style={{ marginTop: '12px' }}>
-              {msgMeta.resources.map((res) => (
+            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {msgMeta.resources.map((res, ri) => (
                 <ResourceUIPreview
-                  key={res.key}
+                  key={`${msg.id}-resource-${res.key}-${ri}`}
                   resource={res}
                   accessToken={accessToken}
                 />

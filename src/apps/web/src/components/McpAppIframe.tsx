@@ -52,15 +52,24 @@ ${themeCSS}
 ${content}
 <script>
 (function() {
+  var resizeTimer;
   function notifyHeight() {
-    var h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, document.body.offsetHeight);
-    window.parent.postMessage({ type: 'arkloop:mcpapp:resize', height: h + 20 }, '*');
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function() {
+      var h = Math.max(
+        document.body.scrollHeight,
+        document.documentElement.scrollHeight,
+        document.body.offsetHeight,
+        document.documentElement.getBoundingClientRect().height,
+        document.body.getBoundingClientRect().height
+      );
+      window.parent.postMessage({ type: 'arkloop:mcpapp:resize', height: Math.ceil(h) + 20 }, '*');
+    }, 150);
   }
   new MutationObserver(notifyHeight).observe(document.body, { childList: true, subtree: true, attributes: true });
   if (typeof ResizeObserver === 'function') {
     var ro = new ResizeObserver(notifyHeight);
     ro.observe(document.body);
-    ro.observe(document.documentElement);
   }
   window.addEventListener('load', notifyHeight);
 })();
@@ -136,6 +145,7 @@ export function McpAppIframe({ uri, content, toolOutput, csp, onOpenLink, style,
   const bridgeRef = useRef<AppBridge | null>(null)
   const pendingToolResultRef = useRef<unknown>(undefined)
   const isConnectedRef = useRef(false)
+  const lastHeightRef = useRef<number>(0)
   const [iframeHeight, setIframeHeight] = useState<number | undefined>(undefined)
 
   // Rebuild iframe HTML when content or theme changes
@@ -225,7 +235,11 @@ export function McpAppIframe({ uri, content, toolOutput, csp, onOpenLink, style,
       const iframe = iframeRef.current
       if (!iframe || event.source !== iframe.contentWindow) return
       if (event.data?.type === 'arkloop:mcpapp:resize' && typeof event.data.height === 'number') {
-        setIframeHeight(Math.min(event.data.height, 2000))
+        const newHeight = Math.min(event.data.height, 2000)
+        if (Math.abs(newHeight - lastHeightRef.current) > 5) {
+          lastHeightRef.current = newHeight
+          setIframeHeight(newHeight)
+        }
       }
     }
     window.addEventListener('message', handler)
