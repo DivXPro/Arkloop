@@ -232,7 +232,30 @@ async function launchManagedApp(appId: ManagedAppId): Promise<{ pid: number }> {
       OD_NAMESPACE: 'default',
       OD_DATA_DIR: installPaths.dataRoot,
       OD_RESOURCE_ROOT: installPaths.resourcesRoot,
-      OD_WEB_OUTPUT_MODE: 'server',
+      OD_DAEMON_CLI_ENTRY: path.join(
+        installPaths.bundleRoot,
+        'prebundled',
+        'daemon',
+        'daemon-cli.mjs',
+      ),
+      OD_DAEMON_SIDECAR_ENTRY: path.join(
+        installPaths.bundleRoot,
+        'prebundled',
+        'daemon',
+        'daemon-sidecar.mjs',
+      ),
+      OD_WEB_SIDECAR_ENTRY: path.join(
+        installPaths.bundleRoot,
+        'prebundled',
+        'web-sidecar.mjs',
+      ),
+      OD_WEB_OUTPUT_MODE: 'standalone',
+      OD_WEB_STANDALONE_ROOT: path.join(
+        installPaths.resourcesRoot,
+        'open-design-web-standalone',
+        'apps',
+        'web',
+      ),
     },
     stdio: 'ignore',
   })
