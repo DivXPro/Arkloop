@@ -9,6 +9,7 @@ type OpenDesignViewState =
 export function OpenDesignExtensionPage() {
   const [state, setState] = useState<OpenDesignViewState>({ phase: 'loading' })
   const containerRef = useRef<HTMLDivElement>(null)
+  const shownRef = useRef(false)
   const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
@@ -69,12 +70,18 @@ export function OpenDesignExtensionPage() {
 
     const syncBounds = () => {
       const rect = container.getBoundingClientRect()
-      void managedApps.showMainArea('open-design', state.webUrl, {
+      const bounds = {
         x: Math.round(rect.x),
         y: Math.round(rect.y),
         width: Math.round(rect.width),
         height: Math.round(rect.height),
-      })
+      }
+      if (!shownRef.current) {
+        shownRef.current = true
+        void managedApps.showMainArea('open-design', state.webUrl, bounds)
+      } else {
+        void managedApps.syncMainAreaBounds('open-design', bounds)
+      }
     }
 
     syncBounds()
@@ -85,6 +92,7 @@ export function OpenDesignExtensionPage() {
     observer.observe(container)
 
     return () => {
+      shownRef.current = false
       observer.disconnect()
     }
   }, [state])
