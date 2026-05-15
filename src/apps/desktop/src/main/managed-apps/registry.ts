@@ -24,7 +24,7 @@ export const managedAppRegistry: Record<string, ManagedAppLaunchConfig> = {
       return {
         OD_NAMESPACE: 'default',
         OD_DATA_DIR: p.dataRoot,
-        OD_RESOURCE_ROOT: p.resourcesRoot,
+        OD_RESOURCE_ROOT: path.join(p.resourcesRoot, 'open-design'),
         OD_DAEMON_CLI_ENTRY: path.join(
           p.bundleRoot,
           'prebundled',
