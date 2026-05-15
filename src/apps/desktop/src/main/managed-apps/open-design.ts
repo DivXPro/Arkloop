@@ -20,7 +20,7 @@ export function getOpenDesignInstallPaths(
     bundleRoot: path.join(runtimeRoot, 'bundle'),
     resourcesRoot: path.join(runtimeRoot, 'resources'),
     dataRoot,
-    nodeBinary: path.join(runtimeRoot, 'resources', 'bin', 'node'),
+    nodeBinary: path.join(runtimeRoot, 'resources', 'open-design', 'bin', 'node'),
     entryScript: path.join(runtimeRoot, 'bundle', 'prebundled', 'headless.mjs'),
     readyFile: path.join(
       dataRoot,
@@ -45,8 +45,8 @@ export function validateOpenDesignInstall(paths: OpenDesignInstallPaths): void {
   const requiredPaths = [
     paths.nodeBinary,
     paths.entryScript,
-    path.join(paths.resourcesRoot, 'skills'),
-    path.join(paths.resourcesRoot, 'design-systems'),
+    path.join(paths.resourcesRoot, 'open-design', 'skills'),
+    path.join(paths.resourcesRoot, 'open-design', 'design-systems'),
   ]
 
   for (const candidate of requiredPaths) {
