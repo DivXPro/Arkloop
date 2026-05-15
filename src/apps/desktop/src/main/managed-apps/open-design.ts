@@ -54,4 +54,29 @@ export function validateOpenDesignInstall(paths: OpenDesignInstallPaths): void {
       throw new Error(`open design install incomplete: missing ${candidate}`)
     }
   }
+
+  // Workaround: open-design v0.7.0 headless.mjs regressed and no longer reads
+  // OD_WEB_SIDECAR_ENTRY, OD_WEB_STANDALONE_ROOT, or OD_WEB_OUTPUT_MODE from
+  // env. Patch the bundled script so the sidecar entries resolve correctly.
+  patchHeadlessEnvVars(paths.entryScript)
+}
+
+function patchHeadlessEnvVars(headlessPath: string): void {
+  try {
+    const content = fs.readFileSync(headlessPath, 'utf8')
+    if (content.includes('webSidecarEntry: cleanEnvString(process.env.OD_WEB_SIDECAR_ENTRY)')) {
+      return
+    }
+    const patched = content
+      .replace('webSidecarEntry: null,', 'webSidecarEntry: cleanEnvString(process.env.OD_WEB_SIDECAR_ENTRY),')
+      .replace('webStandaloneRoot: null,', 'webStandaloneRoot: cleanEnvString(process.env.OD_WEB_STANDALONE_ROOT),')
+      .replace('webOutputMode: "server"', 'webOutputMode,')
+    if (patched !== content) {
+      fs.writeFileSync(headlessPath, patched, 'utf8')
+    }
+  } catch {
+    // ignore patch failures — if the bug is present the spawn will fail
+    // with a clear error, and if the file format changed the user will
+    // need an updated Arkloop build anyway.
+  }
 }
