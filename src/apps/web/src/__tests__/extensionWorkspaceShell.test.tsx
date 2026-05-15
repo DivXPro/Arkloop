@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LocaleProvider } from '../contexts/LocaleContext'
 import { BrowserTabsProvider } from '../contexts/browser-tabs'
-import { PluginBrowserSessionProvider } from '../plugins/browser-session'
-import { PluginWorkspaceShell } from '../plugins/PluginWorkspaceShell'
-import { PluginRuntimeProvider } from '../plugins/runtime'
-import type { PluginDefinition } from '../plugins/types'
+import { ExtensionBrowserSessionProvider } from '../extensions/extension-browser-session'
+import { ExtensionWorkspaceShell } from '../extensions/ExtensionWorkspaceShell'
+import { ExtensionRuntimeProvider } from '../extensions/extension-runtime'
+import type { ExtensionDefinition } from '../extensions/types'
 
 const desktopMock = vi.hoisted(() => ({
   isDesktop: vi.fn(() => true),
@@ -20,26 +20,26 @@ vi.mock('@arkloop/shared/desktop', () => ({
   getDesktopApi: desktopMock.getDesktopApi,
 }))
 
-function SamplePluginBody() {
-  return <div data-testid="sample-plugin-body">sample plugin page</div>
+function SampleExtensionBody() {
+  return <div data-testid="sample-extension-body">sample extension page</div>
 }
 
-const routePlugin: PluginDefinition = {
-  id: 'test-plugin',
-  title: 'Test Plugin',
+const routeExtension: ExtensionDefinition = {
+  id: 'test-extension',
+  title: 'Test Extension',
   desktopOnly: true,
   nav: { section: 'workspace', order: 100 },
-  shell: { mode: 'plugin-main' },
+  shell: { mode: 'extension-main' },
   presentation: {
     default: 'route',
     supported: ['route'],
   },
   surfaces: {
-    mount: SamplePluginBody,
+    mount: SampleExtensionBody,
   },
 }
 
-describe('PluginWorkspaceShell', () => {
+describe('ExtensionWorkspaceShell', () => {
   let container: HTMLDivElement
   let root: ReturnType<typeof createRoot>
   const actEnvironment = globalThis as typeof globalThis & {
@@ -65,17 +65,17 @@ describe('PluginWorkspaceShell', () => {
     }
   })
 
-  it('renders the plugin component in route mode', async () => {
+  it('renders the extension component in route mode', async () => {
     await act(async () => {
       root.render(
-        <MemoryRouter initialEntries={['/plugins/test-plugin']}>
+        <MemoryRouter initialEntries={['/extensions/test-extension']}>
           <LocaleProvider>
             <BrowserTabsProvider>
-              <PluginRuntimeProvider>
-                <PluginBrowserSessionProvider>
-                  <PluginWorkspaceShell plugin={routePlugin} presentation="route" />
-                </PluginBrowserSessionProvider>
-              </PluginRuntimeProvider>
+              <ExtensionRuntimeProvider>
+                <ExtensionBrowserSessionProvider>
+                  <ExtensionWorkspaceShell extension={routeExtension} presentation="route" />
+                </ExtensionBrowserSessionProvider>
+              </ExtensionRuntimeProvider>
             </BrowserTabsProvider>
           </LocaleProvider>
         </MemoryRouter>,
@@ -83,21 +83,21 @@ describe('PluginWorkspaceShell', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="sample-plugin-body"]')).not.toBeNull()
-    expect(container.textContent).toContain('Test Plugin')
+    expect(container.querySelector('[data-testid="sample-extension-body"]')).not.toBeNull()
+    expect(container.textContent).toContain('Test Extension')
   })
 
   it('does not render a presentation switcher when only route is supported', async () => {
     await act(async () => {
       root.render(
-        <MemoryRouter initialEntries={['/plugins/test-plugin']}>
+        <MemoryRouter initialEntries={['/extensions/test-extension']}>
           <LocaleProvider>
             <BrowserTabsProvider>
-              <PluginRuntimeProvider>
-                <PluginBrowserSessionProvider>
-                  <PluginWorkspaceShell plugin={routePlugin} presentation="route" />
-                </PluginBrowserSessionProvider>
-              </PluginRuntimeProvider>
+              <ExtensionRuntimeProvider>
+                <ExtensionBrowserSessionProvider>
+                  <ExtensionWorkspaceShell extension={routeExtension} presentation="route" />
+                </ExtensionBrowserSessionProvider>
+              </ExtensionRuntimeProvider>
             </BrowserTabsProvider>
           </LocaleProvider>
         </MemoryRouter>,
@@ -105,6 +105,6 @@ describe('PluginWorkspaceShell', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid^="plugin-presentation-button-"]')).toBeNull()
+    expect(container.querySelector('[data-testid^="extension-presentation-button-"]')).toBeNull()
   })
 })

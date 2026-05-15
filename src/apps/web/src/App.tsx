@@ -10,13 +10,13 @@ import { ThreadListProvider } from './contexts/thread-list'
 import { AppUIProvider } from './contexts/app-ui'
 import { CreditsProvider } from './contexts/credits'
 import { BrowserTabsProvider } from './contexts/browser-tabs'
-import { PluginRuntimeProvider } from './plugins/runtime'
-import { PluginBrowserSessionProvider } from './plugins/browser-session'
+import { ExtensionRuntimeProvider } from './extensions/extension-runtime'
+import { ExtensionBrowserSessionProvider } from './extensions/extension-browser-session'
 import { SharePage } from './components/SharePage'
 import { VerifyEmailPage } from './components/VerifyEmailPage'
 import { OnboardingWizard } from './components/OnboardingWizard'
 import { HeadlessSetupPage } from './components/HeadlessSetupPage'
-import { PluginHostPage } from './plugins/PluginHostPage'
+import { ExtensionHostPage } from './extensions/ExtensionHostPage'
 import { useLocale } from './contexts/LocaleContext'
 import { shouldDelayLocalSession } from './appAuthStartup'
 import {
@@ -391,13 +391,13 @@ function App() {
               <ThreadListProvider>
                 <AppUIProvider>
                   <BrowserTabsProvider>
-                    <PluginRuntimeProvider>
-                      <PluginBrowserSessionProvider>
+                    <ExtensionRuntimeProvider>
+                      <ExtensionBrowserSessionProvider>
                         <CreditsProvider>
                           <AppLayout />
                         </CreditsProvider>
-                      </PluginBrowserSessionProvider>
-                    </PluginRuntimeProvider>
+                      </ExtensionBrowserSessionProvider>
+                    </ExtensionRuntimeProvider>
                   </BrowserTabsProvider>
                 </AppUIProvider>
               </ThreadListProvider>
@@ -407,7 +407,7 @@ function App() {
             <Route path="search" element={<WelcomePage />} />
             <Route path="t/:threadId" element={<ChatShell />} />
             <Route path="t/:threadId/search" element={<ChatShell />} />
-            <Route path="plugins/:pluginId" element={<PluginHostPage />} />
+            <Route path="extensions/:extensionId" element={<ExtensionHostPage />} />
             <Route path="scheduled-jobs" element={<Suspense fallback={<LoadingPage label={t.loading} />}><ScheduledJobsPage /></Suspense>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

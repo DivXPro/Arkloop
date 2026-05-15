@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { BrowserTabsProvider } from '../contexts/browser-tabs'
 import {
-  PluginBrowserSessionProvider,
-  usePluginBrowserSession,
-} from '../plugins/browser-session'
+  ExtensionBrowserSessionProvider,
+  useExtensionBrowserSession,
+} from '../extensions/extension-browser-session'
 
 const desktopMock = vi.hoisted(() => {
   let stateChangedHandler:
@@ -27,8 +27,8 @@ const desktopMock = vi.hoisted(() => {
     list: vi.fn().mockResolvedValue({ tabs: [] }),
     create: vi.fn().mockImplementation(async () => {
       const tab = {
-        id: 'browser-plugin',
-        title: 'Plugin Tab',
+        id: 'browser-extension',
+        title: 'Extension Tab',
         url: 'https://example.com/',
         faviconUrl: null,
         loading: false,
@@ -68,16 +68,16 @@ vi.mock('@arkloop/shared/desktop', () => ({
 }))
 
 function Probe() {
-  const { ensureBrowserSession } = usePluginBrowserSession()
+  const { ensureBrowserSession } = useExtensionBrowserSession()
 
   return (
-    <button type="button" onClick={() => void ensureBrowserSession('sample-plugin')}>
+    <button type="button" onClick={() => void ensureBrowserSession('sample-extension')}>
       ensure
     </button>
   )
 }
 
-describe('PluginBrowserSessionProvider', () => {
+describe('ExtensionBrowserSessionProvider', () => {
   let container: HTMLDivElement
   let root: ReturnType<typeof createRoot>
   const actEnvironment = globalThis as typeof globalThis & {
@@ -103,14 +103,14 @@ describe('PluginBrowserSessionProvider', () => {
     }
   })
 
-  it('creates one browser tab per plugin and reuses it on repeated activation', async () => {
+  it('creates one browser tab per extension and reuses it on repeated activation', async () => {
     await act(async () => {
       root.render(
         <MemoryRouter initialEntries={['/']}>
           <BrowserTabsProvider>
-            <PluginBrowserSessionProvider>
+            <ExtensionBrowserSessionProvider>
               <Probe />
-            </PluginBrowserSessionProvider>
+            </ExtensionBrowserSessionProvider>
           </BrowserTabsProvider>
         </MemoryRouter>,
       )

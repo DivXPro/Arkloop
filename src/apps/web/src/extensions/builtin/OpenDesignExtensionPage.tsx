@@ -6,7 +6,7 @@ type OpenDesignViewState =
   | { phase: 'error'; message: string }
   | { phase: 'ready'; webUrl: string }
 
-export function OpenDesignPluginPage() {
+export function OpenDesignExtensionPage() {
   const [state, setState] = useState<OpenDesignViewState>({ phase: 'loading' })
   const containerRef = useRef<HTMLDivElement>(null)
   const [retryKey, setRetryKey] = useState(0)
@@ -99,7 +99,7 @@ export function OpenDesignPluginPage() {
       <div
         ref={containerRef}
         className="flex h-full w-full items-center justify-center"
-        data-testid="open-design-plugin-loading"
+        data-testid="open-design-extension-loading"
       >
         Loading Open Design…
       </div>
@@ -111,7 +111,7 @@ export function OpenDesignPluginPage() {
       <div
         ref={containerRef}
         className="flex h-full w-full flex-col items-center justify-center gap-4 p-6"
-        data-testid="open-design-plugin-error"
+        data-testid="open-design-extension-error"
       >
         <div className="text-(--c-status-error)">{state.message}</div>
         <button
@@ -129,7 +129,7 @@ export function OpenDesignPluginPage() {
     <div
       ref={containerRef}
       className="h-full w-full"
-      data-testid="open-design-plugin-ready"
+      data-testid="open-design-extension-ready"
     />
   )
 }
