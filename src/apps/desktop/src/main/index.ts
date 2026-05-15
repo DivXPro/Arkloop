@@ -27,11 +27,7 @@ import { setupMainProcessLogging, getDesktopLogDir } from './logging'
 import { syncLocalVersions } from './updater'
 import { ensureBrowserSearchServer, closeBrowserSearchServer } from './browser-search'
 import { createMainAreaBrowserHost } from './browser-main-area'
-import {
-  getOpenDesignInstallPaths,
-  readOpenDesignReadyFile,
-  validateOpenDesignInstall,
-} from './managed-apps/open-design'
+import { managedAppRegistry } from './managed-apps/registry'
 import { createManagedAppRuntimeManager } from './managed-apps/runtime-manager'
 import type {
   ManagedAppId,
@@ -52,8 +48,6 @@ let mainWindow: BrowserWindow | null = null
 let activeSidecarPort: number | null = null
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 const managedAppProcesses = new Map<ManagedAppId, ChildProcess>()
-const OPEN_DESIGN_READY_TIMEOUT_MS = 30_000
-const OPEN_DESIGN_READY_POLL_MS = 400
 
 const REACT_DEVTOOLS_EXTENSION_ID = 'fmkadmapgofadopljbjfkapdkoienihi'
 
@@ -200,7 +194,8 @@ async function terminateProcess(pid: number): Promise<void> {
 }
 
 async function launchManagedApp(appId: ManagedAppId): Promise<{ pid: number }> {
-  if (appId !== 'open-design') {
+  const config = managedAppRegistry[appId]
+  if (!config) {
     throw new Error(`unsupported managed app: ${appId}`)
   }
 
@@ -212,56 +207,32 @@ async function launchManagedApp(appId: ManagedAppId): Promise<{ pid: number }> {
     managedAppProcesses.delete(appId)
   }
 
-  const installPaths = getOpenDesignInstallPaths()
-  validateOpenDesignInstall(installPaths)
+  const paths = config.getInstallPaths()
+  config.validateInstall(paths)
 
   // Remove stale ready file from a previous session so pollManagedAppReady
   // doesn't accidentally read an old port before the new process writes it.
   try {
-    if (fs.existsSync(installPaths.readyFile)) {
-      fs.unlinkSync(installPaths.readyFile)
+    const readyFile = config.getReadyFilePath(paths)
+    if (fs.existsSync(readyFile)) {
+      fs.unlinkSync(readyFile)
     }
   } catch {
     // ignore
   }
 
-  const child = spawn(installPaths.nodeBinary, [installPaths.entryScript], {
-    cwd: installPaths.runtimeRoot,
+  const spawnArgs = config.buildSpawnArgs(paths)
+  const child = spawn(spawnArgs.command, spawnArgs.args, {
+    cwd: spawnArgs.cwd,
     env: {
       ...process.env,
-      OD_NAMESPACE: 'default',
-      OD_DATA_DIR: installPaths.dataRoot,
-      OD_RESOURCE_ROOT: installPaths.resourcesRoot,
-      OD_DAEMON_CLI_ENTRY: path.join(
-        installPaths.bundleRoot,
-        'prebundled',
-        'daemon',
-        'daemon-cli.mjs',
-      ),
-      OD_DAEMON_SIDECAR_ENTRY: path.join(
-        installPaths.bundleRoot,
-        'prebundled',
-        'daemon',
-        'daemon-sidecar.mjs',
-      ),
-      OD_WEB_SIDECAR_ENTRY: path.join(
-        installPaths.bundleRoot,
-        'prebundled',
-        'web-sidecar.mjs',
-      ),
-      OD_WEB_OUTPUT_MODE: 'standalone',
-      OD_WEB_STANDALONE_ROOT: path.join(
-        installPaths.resourcesRoot,
-        'open-design-web-standalone',
-        'apps',
-        'web',
-      ),
+      ...config.buildEnv(paths),
     },
     stdio: 'ignore',
   })
 
   if (!child.pid) {
-    throw new Error('failed to start open design runtime')
+    throw new Error(`failed to start managed app: ${appId}`)
   }
 
   managedAppProcesses.set(appId, child)
@@ -276,27 +247,29 @@ async function launchManagedApp(appId: ManagedAppId): Promise<{ pid: number }> {
 }
 
 async function pollManagedAppReady(appId: ManagedAppId): Promise<{ webUrl: string }> {
-  if (appId !== 'open-design') {
+  const config = managedAppRegistry[appId]
+  if (!config) {
     throw new Error(`unsupported managed app: ${appId}`)
   }
 
-  const installPaths = getOpenDesignInstallPaths()
-  const deadline = Date.now() + OPEN_DESIGN_READY_TIMEOUT_MS
+  const paths = config.getInstallPaths()
+  const deadline = Date.now() + config.readyTimeoutMs
 
   while (Date.now() < deadline) {
     const child = managedAppProcesses.get(appId)
     if (!child || child.exitCode !== null) {
-      throw new Error('open design runtime exited before ready')
+      throw new Error(`managed app runtime exited before ready: ${appId}`)
     }
 
-    if (fs.existsSync(installPaths.readyFile)) {
-      const raw = fs.readFileSync(installPaths.readyFile, 'utf8')
-      return readOpenDesignReadyFile(raw)
+    const readyFile = config.getReadyFilePath(paths)
+    if (fs.existsSync(readyFile)) {
+      const raw = fs.readFileSync(readyFile, 'utf8')
+      return config.readReadyFile(raw)
     }
-    await sleep(OPEN_DESIGN_READY_POLL_MS)
+    await sleep(config.readyPollMs)
   }
 
-  throw new Error('open design runtime readiness timeout')
+  throw new Error(`managed app runtime readiness timeout: ${appId}`)
 }
 
 async function stopManagedAppByPid(pid: number): Promise<void> {
@@ -342,16 +315,10 @@ async function showManagedAppInMainArea(
   url: string,
   bounds: ManagedAppMainAreaBounds,
 ): Promise<{ ok: boolean }> {
-  if (appId !== 'open-design') {
-    throw new Error(`unsupported managed app: ${appId}`)
-  }
   return mainAreaBrowserHost.show(appId, url, bounds)
 }
 
 function hideManagedAppInMainArea(appId: ManagedAppId): { ok: boolean } {
-  if (appId !== 'open-design') {
-    throw new Error(`unsupported managed app: ${appId}`)
-  }
   return mainAreaBrowserHost.hide(appId)
 }
 
@@ -359,9 +326,6 @@ function syncManagedAppMainAreaBounds(
   appId: ManagedAppId,
   bounds: ManagedAppMainAreaBounds,
 ): { ok: boolean } {
-  if (appId !== 'open-design') {
-    throw new Error(`unsupported managed app: ${appId}`)
-  }
   return mainAreaBrowserHost.syncBounds(appId, bounds)
 }
 
