@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { Bolt, ChevronLeft, ChevronRight, Clock, PanelLeftOpen, Search, SquarePen } from 'lucide-react'
+import { Bolt, ChevronLeft, ChevronRight, Clock, Glasses, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, SquarePen } from 'lucide-react'
 import { isDesktop, getDesktopApi, getDesktopPlatform } from '@arkloop/shared/desktop'
 import { LoadingPage, TimeZoneProvider } from '@arkloop/shared'
 import { Sidebar } from '../components/Sidebar'
@@ -125,7 +125,11 @@ type LayoutMainProps = {
   isMac?: boolean
   sidebarCollapsed?: boolean
   onToggleSidebar?: () => void
-  macHeaderLabels?: { showSidebar: string; back: string; forward: string }
+  macHeaderLabels?: { showSidebar: string; back: string; forward: string; incognito: string; rightPanel: string }
+  incognitoActive?: boolean
+  onToggleIncognito?: () => void
+  rightPanelOpen?: boolean
+  onToggleRightPanel?: () => void
 }
 
 const LayoutMain = memo(function LayoutMain({
@@ -141,6 +145,10 @@ const LayoutMain = memo(function LayoutMain({
   sidebarCollapsed = false,
   onToggleSidebar,
   macHeaderLabels,
+  incognitoActive = false,
+  onToggleIncognito,
+  rightPanelOpen = false,
+  onToggleRightPanel,
 }: LayoutMainProps) {
   const { me, accessToken, logout } = useAuth()
   const { setCreditsBalance } = useCredits()
@@ -202,7 +210,7 @@ const LayoutMain = memo(function LayoutMain({
           {isMac && (
             <div
               className="flex shrink-0"
-              style={{ height: 36, paddingLeft: sidebarCollapsed ? 76 : 12, paddingTop: 4, background: 'transparent', WebkitAppRegion: 'drag' } as React.CSSProperties}
+              style={{ height: 36, paddingLeft: sidebarCollapsed ? 76 : 12, paddingRight: 12, paddingTop: 4, background: 'transparent', WebkitAppRegion: 'drag' } as React.CSSProperties}
             >
               {sidebarCollapsed && onToggleSidebar && (
                 <div className="flex shrink-0 items-center gap-0.5 mr-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -229,7 +237,32 @@ const LayoutMain = memo(function LayoutMain({
                   </button>
                 </div>
               )}
-              <div id="mac-titlebar-slot" className="flex items-center select-none" style={{ position: 'relative', WebkitAppRegion: 'no-drag' } as React.CSSProperties} />
+              <div id="mac-titlebar-slot" className="flex flex-1 items-center select-none" style={{ position: 'relative', WebkitAppRegion: 'no-drag' } as React.CSSProperties} />
+              <div className="flex shrink-0 items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                {onToggleIncognito && (
+                  <button
+                    onClick={onToggleIncognito}
+                    className={[
+                      'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
+                      incognitoActive
+                        ? 'bg-[var(--c-bg-deep)] text-[var(--c-text-primary)]'
+                        : 'text-[var(--c-text-tertiary)] hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]',
+                    ].join(' ')}
+                    aria-label={macHeaderLabels?.incognito}
+                  >
+                    <Glasses size={17} />
+                  </button>
+                )}
+                {onToggleRightPanel && (
+                  <button
+                    onClick={onToggleRightPanel}
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+                    aria-label={macHeaderLabels?.rightPanel}
+                  >
+                    {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+                  </button>
+                )}
+              </div>
             </div>
           )}
           <div className="relative flex min-w-0 flex-1 overflow-hidden">
@@ -507,8 +540,6 @@ export function AppLayout() {
                   onThreadDeleted={handleThreadDeleted}
                   preserveExpandedLayout={collapseWorkSidebar}
                   beforeNavigateToThread={handleBeforeNavigateToThread}
-                  rightPanelOpen={rightPanelOpen}
-                  onToggleRightPanel={settingsOpen ? undefined : () => triggerTitleBarRightPanelClick()}
                   hasAppUpdate={hasAppUpdate}
                   onOpenUpdateSettings={handleOpenUpdateSettings}
                 />
@@ -542,7 +573,11 @@ export function AppLayout() {
             isMac={isMac}
             sidebarCollapsed={sidebarCollapsed}
             onToggleSidebar={() => toggleSidebar('titlebar')}
-            macHeaderLabels={{ showSidebar: t.showSidebarAction, back: t.browserPanel.back, forward: t.browserPanel.forward }}
+            macHeaderLabels={{ showSidebar: t.showSidebarAction, back: t.browserPanel.back, forward: t.browserPanel.forward, incognito: t.toggleIncognito, rightPanel: t.rightPanel.toggle }}
+            incognitoActive={titleBarIncognitoActive}
+            onToggleIncognito={activeAppMode !== 'work' && currentThreadId ? handleDesktopTitleBarIncognitoClick : undefined}
+            rightPanelOpen={rightPanelOpen}
+            onToggleRightPanel={settingsOpen || !currentThreadId ? undefined : () => triggerTitleBarRightPanelClick()}
           />
         </div>
       </div>

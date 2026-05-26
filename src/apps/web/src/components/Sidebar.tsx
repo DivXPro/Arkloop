@@ -22,8 +22,6 @@ import {
   ChevronLeft,
   Plus,
   ArrowUp,
-  PanelRightClose,
-  PanelRightOpen,
 } from 'lucide-react'
 import type { ThreadGtdBucket, ThreadResponse, UpdateThreadSidebarRequest } from '../api'
 import { listStarredThreadIds, starThread, unstarThread, updateThreadTitle, deleteThread, updateThreadSidebarState } from '../api'
@@ -56,8 +54,6 @@ type Props = {
   preserveExpandedLayout?: boolean
   /** 点到历史会话时先收起设置等全屏层；否则同 URL 的 navigate 不会触发，桌面端无法回到聊天 */
   beforeNavigateToThread?: () => void
-  rightPanelOpen?: boolean
-  onToggleRightPanel?: () => void
   hasAppUpdate?: boolean
   onOpenUpdateSettings?: () => void
 }
@@ -268,8 +264,6 @@ export const Sidebar = memo(function Sidebar({
   onThreadDeleted,
   preserveExpandedLayout = false,
   beforeNavigateToThread,
-  rightPanelOpen = false,
-  onToggleRightPanel,
   hasAppUpdate = false,
   onOpenUpdateSettings,
 }: Props) {
@@ -277,7 +271,6 @@ export const Sidebar = memo(function Sidebar({
   const {
     isPrivateMode,
     pendingIncognitoMode,
-    togglePrivateMode,
     updateTitle: onThreadTitleUpdated,
     upsertThread,
     markCompletionRead,
@@ -1865,42 +1858,17 @@ export const Sidebar = memo(function Sidebar({
           </button>
         )}
 
-        {/* Mac desktop: functional buttons (incognito, right panel, update) */}
-        {isMacDesktop && !visualCollapsed && (
+        {/* Mac desktop: app update button */}
+        {isMacDesktop && !visualCollapsed && hasAppUpdate && (
           <div className="flex items-center gap-0.5 px-1 pb-1">
-            {appMode !== 'work' && (
-              <button
-                onClick={togglePrivateMode}
-                className={[
-                  'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
-                  isPrivateModeEffective
-                    ? 'bg-[var(--c-bg-deep)] text-[var(--c-text-primary)]'
-                    : 'text-[var(--c-text-tertiary)] hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]',
-                ].join(' ')}
-                aria-label={t.toggleIncognito}
-              >
-                <Glasses size={17} />
-              </button>
-            )}
-            {onToggleRightPanel && (
-              <button
-                onClick={onToggleRightPanel}
-                className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
-                aria-label={t.rightPanel.toggle}
-              >
-                {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-              </button>
-            )}
-            {hasAppUpdate && (
-              <button
-                onClick={() => onOpenUpdateSettings?.()}
-                className="relative flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-accent)] transition-colors hover:bg-[var(--c-bg-deep)]"
-                aria-label={t.desktopSettings.appUpdateAvailable}
-              >
-                <ArrowUp size={16} />
-                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[var(--c-accent)]" />
-              </button>
-            )}
+            <button
+              onClick={() => onOpenUpdateSettings?.()}
+              className="relative flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-accent)] transition-colors hover:bg-[var(--c-bg-deep)]"
+              aria-label={t.desktopSettings.appUpdateAvailable}
+            >
+              <ArrowUp size={16} />
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[var(--c-accent)]" />
+            </button>
           </div>
         )}
 
