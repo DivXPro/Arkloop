@@ -215,7 +215,7 @@ export function AppLayout() {
   } = useThreadList()
   const { sidebarCollapsed, sidebarHiddenByWidth, rightPanelOpen, toggleSidebar } = useSidebarUI()
   const { isSearchMode, searchOverlayOpen, exitSearchMode, closeSearchOverlay } = useSearchUI()
-  const { appMode, availableAppModes, setAppMode } = useAppModeUI()
+  const { appMode } = useAppModeUI()
   const { settingsOpen, openSettings, closeSettings } = useSettingsUI()
   const { closeNotifications } = useNotificationsUI()
   const { queueSkillPrompt } = useSkillPromptUI()
@@ -231,7 +231,7 @@ export function AppLayout() {
   const [productUpdateNotifications, setProductUpdateNotifications] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth)
   const [sidebarResizing, setSidebarResizing] = useState(false)
-  const [modeSwitchingCollapsedSidebar, setModeSwitchingCollapsedSidebar] = useState(false)
+  const [modeSwitchingCollapsedSidebar] = useState(false)
   const [collapsedSidebarExitVisible, setCollapsedSidebarExitVisible] = useState(false)
   const [collapsedSidebarEnterVisible, setCollapsedSidebarEnterVisible] = useState(false)
 
@@ -332,19 +332,6 @@ export function AppLayout() {
     return filteredThreads.filter((thread) => thread.sidebar_pinned_at || pinnedIds.has(thread.id))
   }, [activeAppMode, filteredThreads])
 
-  const handleSetAppMode = useCallback((mode: import('../storage').AppMode) => {
-    if (desktop && sidebarCollapsed && mode !== activeAppMode) {
-      if (activeAppMode === 'chat' && mode === 'work') {
-        setCollapsedSidebarExitVisible(true)
-      } else if (activeAppMode === 'work' && mode === 'chat') {
-        setCollapsedSidebarEnterVisible(true)
-      }
-      setModeSwitchingCollapsedSidebar(true)
-      requestAnimationFrame(() => setModeSwitchingCollapsedSidebar(false))
-    }
-    setAppMode(mode)
-  }, [activeAppMode, desktop, setAppMode, sidebarCollapsed])
-
   const handleDesktopTitleBarIncognitoClick = useCallback(() => {
     triggerTitleBarIncognitoClick(togglePrivateMode)
   }, [triggerTitleBarIncognitoClick, togglePrivateMode])
@@ -425,9 +412,6 @@ export function AppLayout() {
             sidebarCollapsed={sidebarCollapsed}
             onToggleSidebar={() => toggleSidebar('titlebar')}
             onNewThread={handleNewThread}
-            appMode={activeAppMode}
-            onSetAppMode={handleSetAppMode}
-            availableModes={availableAppModes}
             showIncognitoToggle={activeAppMode !== 'work'}
             isPrivateMode={titleBarIncognitoActive}
             onTogglePrivateMode={handleDesktopTitleBarIncognitoClick}

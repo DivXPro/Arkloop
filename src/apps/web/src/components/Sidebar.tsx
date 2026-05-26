@@ -24,6 +24,7 @@ import type { ThreadGtdBucket, ThreadResponse, UpdateThreadSidebarRequest } from
 import { listStarredThreadIds, starThread, unstarThread, updateThreadTitle, deleteThread, updateThreadSidebarState } from '../api'
 import { isLocalMode, isDesktop } from '@arkloop/shared/desktop'
 import { ConfirmDialog } from '@arkloop/shared'
+import { ModeSwitch } from './ModeSwitch'
 import { useLocale } from '../contexts/LocaleContext'
 import { ShareModal } from './ShareModal'
 import { beginPerfTrace, endPerfTrace, isPerfDebugEnabled, recordPerfValue } from '../perfDebug'
@@ -272,7 +273,7 @@ export const Sidebar = memo(function Sidebar({
   const visualCollapsed = preserveExpandedLayout ? false : collapsed
   const { openSearchOverlay: onOpenSearchOverlay } = useSearchUI()
   const { settingsOpen: suppressActiveThreadHighlight, openSettings: onOpenSettings } = useSettingsUI()
-  const { appMode } = useAppModeUI()
+  const { appMode, setAppMode, availableAppModes } = useAppModeUI()
   const desktopMode = isDesktop()
   const isPrivateModeEffective = isPrivateMode || pendingIncognitoMode
   const isWorkMode = appMode === 'work'
@@ -1648,6 +1649,17 @@ export const Sidebar = memo(function Sidebar({
           </div>
         )
       )}
+
+      {/* mode switch */}
+      <div className="px-3 pt-2 pb-1">
+        <ModeSwitch
+          mode={appMode ?? 'chat'}
+          onChange={setAppMode}
+          labels={{ chat: t.modeChat, work: t.modeWork }}
+          availableModes={availableAppModes}
+          fullWidth
+        />
+      </div>
 
       <nav
         className="flex flex-col items-start gap-px pl-[8px] pr-[7px] pt-1"

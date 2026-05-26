@@ -19,9 +19,7 @@ import { getDesktopApi, getDesktopPlatform, isDesktop } from '@arkloop/shared/de
 import type { AppUpdaterState } from '@arkloop/shared/desktop'
 import { SpinnerIcon } from '@arkloop/shared/components/auth-ui'
 import { Button } from '@arkloop/shared'
-import { ModeSwitch } from './ModeSwitch'
 import { useLocale } from '../contexts/LocaleContext'
-import type { AppMode } from '../storage'
 import type { SettingsTab } from './SettingsModal'
 import { openExternal } from '../openExternal'
 import { beginPerfTrace, endPerfTrace } from '../perfDebug'
@@ -43,9 +41,6 @@ type Props = {
   sidebarCollapsed: boolean
   onToggleSidebar: () => void
   onNewThread?: () => void
-  appMode: AppMode
-  onSetAppMode: (mode: AppMode) => void
-  availableModes: AppMode[]
   showIncognitoToggle?: boolean
   isPrivateMode?: boolean
   onTogglePrivateMode?: () => void
@@ -67,9 +62,6 @@ export function DesktopTitleBar({
   sidebarCollapsed,
   onToggleSidebar,
   onNewThread,
-  appMode,
-  onSetAppMode,
-  availableModes,
   showIncognitoToggle = true,
   isPrivateMode,
   onTogglePrivateMode,
@@ -151,7 +143,7 @@ export function DesktopTitleBar({
     : appUpdateState?.phase === 'downloaded'
       ? t.desktopSettings.appUpdateReady
       : t.desktopSettings.appUpdateAvailable
-  const newThreadLabel = appMode === 'work' ? t.newTask : t.newChat
+  const newThreadLabel = t.newTask
   const showPinnedSidebarPicker = sidebarCollapsed && pinnedThreads.length > 0
 
   const clearPinnedMenuTimers = useCallback(() => {
@@ -280,7 +272,6 @@ export function DesktopTitleBar({
               endPerfTrace(sidebarToggleTrace.current, {
                 phase: 'click',
                 collapsed: sidebarCollapsed,
-                appMode,
               })
               sidebarToggleTrace.current = null
               onToggleSidebar()
@@ -289,7 +280,6 @@ export function DesktopTitleBar({
               sidebarToggleTrace.current = beginPerfTrace('desktop_titlebar_sidebar_interaction', {
                 phase: 'pointerdown',
                 collapsed: sidebarCollapsed,
-                appMode,
               })
             }}
             onPointerLeave={() => {
@@ -335,26 +325,6 @@ export function DesktopTitleBar({
             <SquarePen size={17} />
           </ActionIconButton>
         )}
-      </div>
-
-      {/* centered mode switch */}
-      <div
-        className="min-w-0"
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%) translateY(1px)',
-          zIndex: 1,
-          WebkitAppRegion: 'no-drag',
-        } as React.CSSProperties}
-      >
-        <ModeSwitch
-          mode={appMode}
-          onChange={onSetAppMode}
-          labels={{ chat: t.modeChat, work: t.modeWork }}
-          availableModes={availableModes}
-        />
       </div>
 
       {/* app actions and window controls */}

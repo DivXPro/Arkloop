@@ -363,9 +363,6 @@ describe('DesktopTitleBar update entry', () => {
           <DesktopTitleBar
             sidebarCollapsed={false}
             onToggleSidebar={() => {}}
-            appMode="chat"
-            onSetAppMode={() => {}}
-            availableModes={['chat', 'work']}
             showIncognitoToggle={false}
             hasAppUpdate={hasAppUpdate}
             appUpdateState={state}
