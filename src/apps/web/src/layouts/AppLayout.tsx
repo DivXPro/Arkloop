@@ -237,8 +237,8 @@ const LayoutMain = memo(function LayoutMain({
                   </button>
                 </div>
               )}
-              <div id="mac-titlebar-slot" className="flex flex-1 items-center select-none" style={{ position: 'relative', WebkitAppRegion: 'no-drag' } as React.CSSProperties} />
-              <div className="flex shrink-0 items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              <div id="mac-titlebar-slot" className="flex items-center select-none" style={{ position: 'relative', WebkitAppRegion: 'no-drag' } as React.CSSProperties} />
+              <div className="flex shrink-0 items-center gap-0.5 ml-auto" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
                 {onToggleIncognito && (
                   <button
                     onClick={onToggleIncognito}
