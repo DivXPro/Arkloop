@@ -7,17 +7,18 @@ type Props = {
   onChange: (mode: AppMode) => void
   labels: { chat: string; work: string }
   availableModes?: AppMode[]
+  fullWidth?: boolean
 }
 
 const OPTIONS: AppMode[] = ['chat', 'work']
 
-export function ModeSwitch({ mode, onChange, labels, availableModes = OPTIONS }: Props) {
+export function ModeSwitch({ mode, onChange, labels, availableModes = OPTIONS, fullWidth }: Props) {
   const labelMap: Record<AppMode, string> = { chat: labels.chat, work: labels.work }
   const options = OPTIONS.filter((opt) => availableModes.includes(opt))
 
   return (
     <div
-      className="relative flex items-center rounded-[10px] p-[2px]"
+      className={['relative flex items-center rounded-[10px] p-[2px]', fullWidth && 'w-full'].filter(Boolean).join(' ')}
       style={{
         background: 'var(--c-mode-switch-track)',
       }}
@@ -35,7 +36,7 @@ export function ModeSwitch({ mode, onChange, labels, availableModes = OPTIONS }:
                 ? 'var(--c-mode-switch-active-text)'
                 : 'var(--c-mode-switch-inactive-text)',
               fontWeight: 350,
-              minWidth: '58px',
+              ...(fullWidth ? { flex: 1 } : { minWidth: '58px' }),
             }}
           >
             {active && (

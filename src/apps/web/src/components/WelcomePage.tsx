@@ -31,6 +31,8 @@ import {
   writeInputDraftAttachments,
 } from '../storage'
 import { useLocale } from '../contexts/LocaleContext'
+import { useWebGLSupport } from '../hooks/useWebGLSupport'
+import { WelcomeParticleBackgroundLazy } from './WelcomeParticleBackgroundLazy'
 import { buildMessageRequest } from '../messageContent'
 import { useAuth } from '../contexts/auth'
 import { useThreadList } from '../contexts/thread-list'
@@ -40,6 +42,7 @@ import {
   useRightPanelActions,
   useSearchUI,
   useSettingsUI,
+  useSidebarUI,
   useSkillPromptUI,
   useTitleBarRightPanelUI,
 } from '../contexts/app-ui'
@@ -168,12 +171,14 @@ function buildGreeting(strings: WelcomeGreetingTexts, name: string | null, now: 
 export function WelcomePage() {
   const { accessToken, logout: onLoggedOut, me } = useAuth()
   const agentClient = useAgentClient()
+  const { supported: webglSupported, checked: webglChecked } = useWebGLSupport()
   const { timeZone } = useTimeZone()
   const { addThread: onThreadCreated, isPrivateMode, togglePrivateMode: onTogglePrivateMode } = useThreadList()
   const { isSearchMode, enterSearchMode: onEnterSearchMode, exitSearchMode: onExitSearchMode } = useSearchUI()
   const { openNotifications: onOpenNotifications, notificationVersion } = useNotificationsUI()
   const { openSettings: onOpenSettings } = useSettingsUI()
   const { appMode } = useAppModeUI()
+  const { sidebarCollapsed } = useSidebarUI()
   const { setRightPanelOpen } = useRightPanelActions()
   const { setTitleBarRightPanelClick } = useTitleBarRightPanelUI()
   const { pendingSkillPrompt, consumeSkillPrompt } = useSkillPromptUI()
@@ -564,6 +569,9 @@ export function WelcomePage() {
 
   return (
     <div ref={rootRef} className="flex h-full min-w-0 overflow-hidden">
+      {sidebarCollapsed && webglChecked && webglSupported && (
+        <WelcomeParticleBackgroundLazy containerRef={rootRef} />
+      )}
       <div
         className="theme-surface-page theme-chat-surface flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--c-bg-page)]"
         style={{

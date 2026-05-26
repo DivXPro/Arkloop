@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { Bolt, Clock, Search, SquarePen } from 'lucide-react'
-import { isDesktop, getDesktopApi } from '@arkloop/shared/desktop'
+import { Bolt, ChevronLeft, ChevronRight, Clock, Glasses, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, SquarePen } from 'lucide-react'
+import { isDesktop, getDesktopApi, getDesktopPlatform } from '@arkloop/shared/desktop'
 import { LoadingPage, TimeZoneProvider } from '@arkloop/shared'
 import { Sidebar } from '../components/Sidebar'
 import { DesktopTitleBar } from '../components/DesktopTitleBar'
@@ -30,7 +30,7 @@ import { isPerfDebugEnabled, recordPerfValue } from '../perfDebug'
 import { applyDevAppUpdateMock, resolveAppUpdaterApi } from '../devAppUpdateMock'
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'arkloop:web:sidebar_width'
-const SIDEBAR_COLLAPSED_WIDTH = 48
+const SIDEBAR_COLLAPSED_WIDTH = 0
 const SIDEBAR_DEFAULT_WIDTH = 284
 const SIDEBAR_MIN_WIDTH = 224
 const SIDEBAR_MAX_WIDTH = 420
@@ -89,9 +89,9 @@ function CollapsedSidebarTransitionOverlay({
       aria-hidden="true"
       className={[
         direction === 'enter' ? 'collapsed-sidebar-enter-overlay' : 'collapsed-sidebar-exit-overlay',
-        'theme-surface-sidebar pointer-events-none absolute inset-y-0 left-0 z-30 flex w-[48px] flex-col bg-[var(--c-bg-sidebar)]',
+        'theme-surface-sidebar pointer-events-none absolute inset-y-0 left-0 z-30 flex flex-col bg-[var(--c-bg-sidebar)]',
       ].join(' ')}
-      style={{ borderRight: '0.5px solid var(--c-border)' }}
+      style={{ borderRight: '0.5px solid var(--c-border)', width: SIDEBAR_COLLAPSED_WIDTH }}
       onAnimationEnd={onDone}
     >
       <div className="h-3 shrink-0" />
@@ -122,6 +122,14 @@ type LayoutMainProps = {
   onSearchClose: () => void
   onMeUpdated: (m: import('../api').MeResponse) => void
   onTrySkill: (prompt: string) => void
+  isMac?: boolean
+  sidebarCollapsed?: boolean
+  onToggleSidebar?: () => void
+  macHeaderLabels?: { showSidebar: string; back: string; forward: string; incognito: string; rightPanel: string }
+  incognitoActive?: boolean
+  onToggleIncognito?: () => void
+  rightPanelOpen?: boolean
+  onToggleRightPanel?: () => void
 }
 
 const LayoutMain = memo(function LayoutMain({
@@ -133,6 +141,14 @@ const LayoutMain = memo(function LayoutMain({
   onSearchClose,
   onMeUpdated,
   onTrySkill,
+  isMac = false,
+  sidebarCollapsed = false,
+  onToggleSidebar,
+  macHeaderLabels,
+  incognitoActive = false,
+  onToggleIncognito,
+  rightPanelOpen = false,
+  onToggleRightPanel,
 }: LayoutMainProps) {
   const { me, accessToken, logout } = useAuth()
   const { setCreditsBalance } = useCredits()
@@ -190,13 +206,73 @@ const LayoutMain = memo(function LayoutMain({
           onTrySkill={onTrySkill}
         />
       ) : (
-        <div className="relative flex min-w-0 flex-1 overflow-hidden">
-          <MainViewport
-            accessToken={accessToken}
-            notificationsOpen={notificationsOpen}
-            closeNotifications={closeNotifications}
-            markNotificationRead={markNotificationRead}
-          />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {isMac && (
+            <div
+              className="flex shrink-0"
+              style={{ height: 36, paddingLeft: sidebarCollapsed ? 76 : 12, paddingRight: 12, paddingTop: 4, background: 'transparent', WebkitAppRegion: 'drag' } as React.CSSProperties}
+            >
+              {sidebarCollapsed && onToggleSidebar && (
+                <div className="flex shrink-0 items-center gap-0.5 mr-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                  <button
+                    onClick={onToggleSidebar}
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+                    aria-label={macHeaderLabels?.showSidebar}
+                  >
+                    <PanelLeftOpen size={17} />
+                  </button>
+                  <button
+                    onClick={() => window.history.back()}
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+                    aria-label={macHeaderLabels?.back}
+                  >
+                    <ChevronLeft size={17} />
+                  </button>
+                  <button
+                    onClick={() => window.history.forward()}
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+                    aria-label={macHeaderLabels?.forward}
+                  >
+                    <ChevronRight size={17} />
+                  </button>
+                </div>
+              )}
+              <div id="mac-titlebar-slot" className="flex items-center select-none" style={{ position: 'relative', WebkitAppRegion: 'no-drag' } as React.CSSProperties} />
+              <div className="flex shrink-0 items-center gap-0.5 ml-auto" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                {onToggleIncognito && (
+                  <button
+                    onClick={onToggleIncognito}
+                    className={[
+                      'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
+                      incognitoActive
+                        ? 'bg-[var(--c-bg-deep)] text-[var(--c-text-primary)]'
+                        : 'text-[var(--c-text-tertiary)] hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]',
+                    ].join(' ')}
+                    aria-label={macHeaderLabels?.incognito}
+                  >
+                    <Glasses size={17} />
+                  </button>
+                )}
+                {onToggleRightPanel && (
+                  <button
+                    onClick={onToggleRightPanel}
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+                    aria-label={macHeaderLabels?.rightPanel}
+                  >
+                    {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="relative flex min-w-0 flex-1 overflow-hidden">
+            <MainViewport
+              accessToken={accessToken}
+              notificationsOpen={notificationsOpen}
+              closeNotifications={closeNotifications}
+              markNotificationRead={markNotificationRead}
+            />
+          </div>
         </div>
       )}
     </>
@@ -215,7 +291,7 @@ export function AppLayout() {
   } = useThreadList()
   const { sidebarCollapsed, sidebarHiddenByWidth, rightPanelOpen, toggleSidebar } = useSidebarUI()
   const { isSearchMode, searchOverlayOpen, exitSearchMode, closeSearchOverlay } = useSearchUI()
-  const { appMode, availableAppModes, setAppMode } = useAppModeUI()
+  const { appMode } = useAppModeUI()
   const { settingsOpen, openSettings, closeSettings } = useSettingsUI()
   const { closeNotifications } = useNotificationsUI()
   const { queueSkillPrompt } = useSkillPromptUI()
@@ -226,12 +302,13 @@ export function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const desktop = isDesktop()
+  const isMac = getDesktopPlatform() === 'darwin'
 
   const [appUpdateState, setAppUpdateState] = useState<import('@arkloop/shared/desktop').AppUpdaterState | null>(null)
   const [productUpdateNotifications, setProductUpdateNotifications] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth)
   const [sidebarResizing, setSidebarResizing] = useState(false)
-  const [modeSwitchingCollapsedSidebar, setModeSwitchingCollapsedSidebar] = useState(false)
+  const [modeSwitchingCollapsedSidebar] = useState(false)
   const [collapsedSidebarExitVisible, setCollapsedSidebarExitVisible] = useState(false)
   const [collapsedSidebarEnterVisible, setCollapsedSidebarEnterVisible] = useState(false)
 
@@ -273,6 +350,10 @@ export function AppLayout() {
 
   const handleTitleBarOpenSettings = useCallback((tab?: SettingsTab | 'voice') => {
     openSettings(tab)
+  }, [openSettings])
+
+  const handleOpenUpdateSettings = useCallback(() => {
+    openSettings('updates')
   }, [openSettings])
 
   const handleSidebarResizeStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -331,19 +412,6 @@ export function AppLayout() {
     const pinnedIds = readPinnedThreadIds()
     return filteredThreads.filter((thread) => thread.sidebar_pinned_at || pinnedIds.has(thread.id))
   }, [activeAppMode, filteredThreads])
-
-  const handleSetAppMode = useCallback((mode: import('../storage').AppMode) => {
-    if (desktop && sidebarCollapsed && mode !== activeAppMode) {
-      if (activeAppMode === 'chat' && mode === 'work') {
-        setCollapsedSidebarExitVisible(true)
-      } else if (activeAppMode === 'work' && mode === 'chat') {
-        setCollapsedSidebarEnterVisible(true)
-      }
-      setModeSwitchingCollapsedSidebar(true)
-      requestAnimationFrame(() => setModeSwitchingCollapsedSidebar(false))
-    }
-    setAppMode(mode)
-  }, [activeAppMode, desktop, setAppMode, sidebarCollapsed])
 
   const handleDesktopTitleBarIncognitoClick = useCallback(() => {
     triggerTitleBarIncognitoClick(togglePrivateMode)
@@ -420,14 +488,11 @@ export function AppLayout() {
     <TimeZoneProvider userTimeZone={me?.timezone ?? null} accountTimeZone={me?.account_timezone ?? null}>
       <div className="theme-background-root app-viewport flex flex-col overflow-hidden bg-[var(--c-bg-page)]">
         <div className="theme-background-layer" aria-hidden="true" />
-        {desktop && (
+        {desktop && !isMac && (
           <DesktopTitleBar
             sidebarCollapsed={sidebarCollapsed}
             onToggleSidebar={() => toggleSidebar('titlebar')}
             onNewThread={handleNewThread}
-            appMode={activeAppMode}
-            onSetAppMode={handleSetAppMode}
-            availableModes={availableAppModes}
             showIncognitoToggle={activeAppMode !== 'work'}
             isPrivateMode={titleBarIncognitoActive}
             onTogglePrivateMode={handleDesktopTitleBarIncognitoClick}
@@ -475,6 +540,8 @@ export function AppLayout() {
                   onThreadDeleted={handleThreadDeleted}
                   preserveExpandedLayout={collapseWorkSidebar}
                   beforeNavigateToThread={handleBeforeNavigateToThread}
+                  hasAppUpdate={hasAppUpdate}
+                  onOpenUpdateSettings={handleOpenUpdateSettings}
                 />
               </div>
               <div
@@ -503,6 +570,14 @@ export function AppLayout() {
             onSearchClose={handleCloseSearch}
             onMeUpdated={updateMe}
             onTrySkill={handleTrySkill}
+            isMac={isMac}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={() => toggleSidebar('titlebar')}
+            macHeaderLabels={{ showSidebar: t.showSidebarAction, back: t.browserPanel.back, forward: t.browserPanel.forward, incognito: t.toggleIncognito, rightPanel: t.rightPanel.toggle }}
+            incognitoActive={titleBarIncognitoActive}
+            onToggleIncognito={activeAppMode !== 'work' && currentThreadId ? handleDesktopTitleBarIncognitoClick : undefined}
+            rightPanelOpen={rightPanelOpen}
+            onToggleRightPanel={settingsOpen || !currentThreadId ? undefined : () => triggerTitleBarRightPanelClick()}
           />
         </div>
       </div>

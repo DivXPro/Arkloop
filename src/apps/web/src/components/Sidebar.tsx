@@ -6,6 +6,7 @@ import {
   Search,
   Clock,
   PanelLeftClose,
+  PanelLeftOpen,
   Bolt,
   Glasses,
   MoreHorizontal,
@@ -18,12 +19,15 @@ import {
   Inbox,
   CheckCircle,
   ChevronRight,
+  ChevronLeft,
   Plus,
+  ArrowUp,
 } from 'lucide-react'
 import type { ThreadGtdBucket, ThreadResponse, UpdateThreadSidebarRequest } from '../api'
 import { listStarredThreadIds, starThread, unstarThread, updateThreadTitle, deleteThread, updateThreadSidebarState } from '../api'
-import { isLocalMode, isDesktop } from '@arkloop/shared/desktop'
+import { isLocalMode, isDesktop, getDesktopPlatform } from '@arkloop/shared/desktop'
 import { ConfirmDialog } from '@arkloop/shared'
+import { ModeSwitch } from './ModeSwitch'
 import { useLocale } from '../contexts/LocaleContext'
 import { ShareModal } from './ShareModal'
 import { beginPerfTrace, endPerfTrace, isPerfDebugEnabled, recordPerfValue } from '../perfDebug'
@@ -50,6 +54,8 @@ type Props = {
   preserveExpandedLayout?: boolean
   /** 点到历史会话时先收起设置等全屏层；否则同 URL 的 navigate 不会触发，桌面端无法回到聊天 */
   beforeNavigateToThread?: () => void
+  hasAppUpdate?: boolean
+  onOpenUpdateSettings?: () => void
 }
 
 type ProjectGroup = { path: string; label: string; threads: ThreadResponse[] }
@@ -258,6 +264,8 @@ export const Sidebar = memo(function Sidebar({
   onThreadDeleted,
   preserveExpandedLayout = false,
   beforeNavigateToThread,
+  hasAppUpdate = false,
+  onOpenUpdateSettings,
 }: Props) {
   const { me, accessToken } = useAuth()
   const {
@@ -272,8 +280,9 @@ export const Sidebar = memo(function Sidebar({
   const visualCollapsed = preserveExpandedLayout ? false : collapsed
   const { openSearchOverlay: onOpenSearchOverlay } = useSearchUI()
   const { settingsOpen: suppressActiveThreadHighlight, openSettings: onOpenSettings } = useSettingsUI()
-  const { appMode } = useAppModeUI()
+  const { appMode, setAppMode, availableAppModes } = useAppModeUI()
   const desktopMode = isDesktop()
+  const isMacDesktop = desktopMode && getDesktopPlatform() === 'darwin'
   const isPrivateModeEffective = isPrivateMode || pendingIncognitoMode
   const isWorkMode = appMode === 'work'
   const navigate = useNavigate()
@@ -1590,8 +1599,40 @@ export const Sidebar = memo(function Sidebar({
         contain: 'layout paint style',
       }}
     >
-      {/* Desktop title bar spacer */}
-      {desktopMode && <div className="h-3" />}
+      {/* Desktop title bar spacer (Windows only, Mac has no title bar) */}
+      {desktopMode && !isMacDesktop && <div className="h-3" />}
+
+      {/* Mac desktop: navigation buttons beside traffic lights (hidden when collapsed) */}
+      {isMacDesktop && !collapsed && (
+        <div
+          className="flex items-center gap-0.5 shrink-0"
+          style={{ height: 36, paddingLeft: 76, paddingRight: 12, paddingTop: 4, WebkitAppRegion: 'drag' } as React.CSSProperties}
+        >
+          <div className="flex items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <button
+              onClick={() => onToggleCollapse('sidebar')}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+              aria-label={collapsed ? t.showSidebarAction : t.hideSidebarAction}
+            >
+              {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            </button>
+            <button
+              onClick={() => window.history.back()}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+              aria-label={t.browserPanel.back}
+            >
+              <ChevronLeft size={17} />
+            </button>
+            <button
+              onClick={() => window.history.forward()}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+              aria-label={t.browserPanel.forward}
+            >
+              <ChevronRight size={17} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Non-desktop title bar or spacer */}
       {!desktopMode && (
@@ -1648,6 +1689,17 @@ export const Sidebar = memo(function Sidebar({
           </div>
         )
       )}
+
+      {/* mode switch */}
+      <div className="px-3 pt-2 pb-1">
+        <ModeSwitch
+          mode={appMode ?? 'chat'}
+          onChange={setAppMode}
+          labels={{ chat: t.modeChat, work: t.modeWork }}
+          availableModes={availableAppModes}
+          fullWidth
+        />
+      </div>
 
       <nav
         className="flex flex-col items-start gap-px pl-[8px] pr-[7px] pt-1"
@@ -1806,6 +1858,20 @@ export const Sidebar = memo(function Sidebar({
               </div>
             </div>
           </button>
+        )}
+
+        {/* Mac desktop: app update button */}
+        {isMacDesktop && !visualCollapsed && hasAppUpdate && (
+          <div className="flex items-center gap-0.5 px-1 pb-1">
+            <button
+              onClick={() => onOpenUpdateSettings?.()}
+              className="relative flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-accent)] transition-colors hover:bg-[var(--c-bg-deep)]"
+              aria-label={t.desktopSettings.appUpdateAvailable}
+            >
+              <ArrowUp size={16} />
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[var(--c-accent)]" />
+            </button>
+          </div>
         )}
 
         {/* Settings button: fixed pl-1 so the icon x-position never

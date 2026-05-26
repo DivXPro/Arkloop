@@ -363,9 +363,6 @@ describe('DesktopTitleBar update entry', () => {
           <DesktopTitleBar
             sidebarCollapsed={false}
             onToggleSidebar={() => {}}
-            appMode="chat"
-            onSetAppMode={() => {}}
-            availableModes={['chat', 'work']}
             showIncognitoToggle={false}
             hasAppUpdate={hasAppUpdate}
             appUpdateState={state}
@@ -386,31 +383,25 @@ describe('DesktopTitleBar update entry', () => {
     expect(container.firstElementChild).toBeNull()
   })
 
-  it('平台缺失时不使用浏览器平台推断 macOS 标题栏留白', async () => {
+  it('平台缺失时不渲染标题栏', async () => {
     desktopMock.platform.mockReturnValue(null)
-    Object.defineProperty(window.navigator, 'platform', {
-      configurable: true,
-      value: 'MacIntel',
-    })
 
     await renderTitleBar(appUpdateState('available'), true)
 
-    const titleBar = container.firstElementChild as HTMLElement | null
-    expect(titleBar?.style.paddingLeft).toBe('12px')
-    expect(container.querySelector('button[title="Minimize"]')).toBeNull()
+    expect(container.firstElementChild).toBeNull()
   })
 
-  it('Linux 桌面不渲染 Windows 自绘控制', async () => {
+  it('Linux 桌面不渲染标题栏', async () => {
     desktopMock.platform.mockReturnValue('linux')
 
     await renderTitleBar(appUpdateState('available'), true)
 
-    const titleBar = container.firstElementChild as HTMLElement | null
-    expect(titleBar?.style.paddingLeft).toBe('12px')
-    expect(container.querySelector('button[title="Minimize"]')).toBeNull()
+    expect(container.firstElementChild).toBeNull()
   })
 
   it('只为桌面应用 available/downloaded 状态显示标题栏更新入口', async () => {
+    desktopMock.platform.mockReturnValue('win32')
+
     await renderTitleBar(appUpdateState('idle'), false)
     expect(container.querySelector('button[title="发现新版本"], button[title="Update available"]')).toBeNull()
     expect(container.querySelector('button[title="已可安装"], button[title="Ready to install"]')).toBeNull()
