@@ -4,6 +4,7 @@ import { ConfirmDialog, useToast } from '@arkloop/shared'
 import { useAuth } from '../../contexts/auth'
 import { useLocale } from '../../contexts/LocaleContext'
 import { SettingsButton, SettingsIconButton } from '../../components/settings/_SettingsButton'
+import { MacTitleSlot } from '../../components/MacTitleSlot'
 import {
   listScheduledJobs,
   deleteScheduledJob,
@@ -127,12 +128,14 @@ export default function ScheduledJobsPage() {
     <div className="mx-auto w-full max-w-[720px] px-6 py-10">
       {/* header */}
       <div className="mb-6 flex items-center justify-between">
-        <h1
-          className="text-[20px] font-semibold"
-          style={{ color: 'var(--c-text-primary)' }}
-        >
-          {t.scheduledJobsTitle}
-        </h1>
+        <MacTitleSlot>
+          <h1
+            className="text-[20px] font-semibold"
+            style={{ color: 'var(--c-text-primary)' }}
+          >
+            {t.scheduledJobsTitle}
+          </h1>
+        </MacTitleSlot>
         <SettingsButton
           variant="primary"
           onClick={openCreate}

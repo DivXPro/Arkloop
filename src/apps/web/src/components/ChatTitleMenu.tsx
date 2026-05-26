@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Glasses, Pencil, Share2, Star, Trash2 } from 'lucide-react'
-import { isDesktop } from '@arkloop/shared/desktop'
+import { isDesktop, getDesktopPlatform } from '@arkloop/shared/desktop'
 import { ConfirmDialog } from '@arkloop/shared'
 import { useLocale } from '../contexts/LocaleContext'
 import { useChatSession } from '../contexts/chat-session'
@@ -23,6 +23,7 @@ import {
 } from '../api'
 import { ModeSwitch } from './ModeSwitch'
 import { NotificationBell } from './NotificationBell'
+import { MacTitleSlot } from './MacTitleSlot'
 
 export function ChatTitleMenu() {
   const { threadId } = useChatSession()
@@ -185,75 +186,79 @@ function ChatTitleMenuContent({ threadId }: { threadId: string | null }) {
         <div className="flex min-w-0 flex-1 items-center pl-[5px]">
           {threadId && currentTitle && (
             editingTitle !== null ? (
-              <input
-                ref={editTitleInputRef}
-                value={editingTitle}
-                onChange={(e) => setEditingTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+              <MacTitleSlot>
+                <input
+                  ref={editTitleInputRef}
+                  value={editingTitle}
+                  onChange={(e) => setEditingTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      renameCancelledRef.current = false
+                      void commitRename(editingTitle)
+                    } else if (e.key === 'Escape') {
+                      renameCancelledRef.current = true
+                      setEditingTitle(null)
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!renameCancelledRef.current) {
+                      void commitRename(editingTitle)
+                    }
                     renameCancelledRef.current = false
-                    void commitRename(editingTitle)
-                  } else if (e.key === 'Escape') {
-                    renameCancelledRef.current = true
-                    setEditingTitle(null)
-                  }
-                }}
-                onBlur={() => {
-                  if (!renameCancelledRef.current) {
-                    void commitRename(editingTitle)
-                  }
-                  renameCancelledRef.current = false
-                }}
-                style={{
-                  fontSize: '14px',
-                  fontWeight: 450,
-                  color: 'var(--c-text-primary)',
-                  background: 'var(--c-bg-deep)',
-                  border: '0.5px solid var(--c-border-subtle)',
-                  borderRadius: '8px',
-                  padding: '5px 10px',
-                  outline: 'none',
-                  minWidth: 0,
-                  maxWidth: '320px',
-                  width: '100%',
-                }}
-              />
-            ) : (
-              <div
-                ref={titleContainerRef}
-                className="title-group flex items-stretch gap-[3px]"
-                style={{ transform: 'translateY(-3px)' }}
-              >
-                <button
-                  onClick={openTitleMenu}
-                  className="title-part"
+                  }}
                   style={{
-                    borderRadius: '7px 0 0 7px',
-                    padding: '5px 10px',
                     fontSize: '14px',
-                    fontWeight: 350,
-                    maxWidth: '280px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    fontWeight: 450,
+                    color: 'var(--c-text-primary)',
+                    background: 'var(--c-bg-deep)',
+                    border: '0.5px solid var(--c-border-subtle)',
+                    borderRadius: '8px',
+                    padding: '5px 10px',
+                    outline: 'none',
+                    minWidth: 0,
+                    maxWidth: '320px',
+                    width: '100%',
                   }}
+                />
+              </MacTitleSlot>
+            ) : (
+              <MacTitleSlot>
+                <div
+                  ref={titleContainerRef}
+                  className="title-group flex items-stretch gap-[3px]"
+                  style={{ transform: getDesktopPlatform() === 'darwin' ? undefined : 'translateY(-3px)' }}
                 >
-                  {currentTitle}
-                </button>
-                <button
-                  ref={titleChevronRef}
-                  onClick={openTitleMenu}
-                  className="title-part"
-                  style={{
-                    borderRadius: '0 7px 7px 0',
-                    padding: '5px 8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                  }}
-                >
-                  <ChevronDown size={14} style={{ flexShrink: 0 }} />
-                </button>
-              </div>
+                  <button
+                    onClick={openTitleMenu}
+                    className="title-part"
+                    style={{
+                      borderRadius: '7px 0 0 7px',
+                      padding: '5px 10px',
+                      fontSize: '14px',
+                      fontWeight: 350,
+                      maxWidth: '280px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {currentTitle}
+                  </button>
+                  <button
+                    ref={titleChevronRef}
+                    onClick={openTitleMenu}
+                    className="title-part"
+                    style={{
+                      borderRadius: '0 7px 7px 0',
+                      padding: '5px 8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <ChevronDown size={14} style={{ flexShrink: 0 }} />
+                  </button>
+                </div>
+              </MacTitleSlot>
             )
           )}
         </div>

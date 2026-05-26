@@ -6,6 +6,7 @@ import {
   Search,
   Clock,
   PanelLeftClose,
+  PanelLeftOpen,
   Bolt,
   Glasses,
   MoreHorizontal,
@@ -18,11 +19,15 @@ import {
   Inbox,
   CheckCircle,
   ChevronRight,
+  ChevronLeft,
   Plus,
+  ArrowUp,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react'
 import type { ThreadGtdBucket, ThreadResponse, UpdateThreadSidebarRequest } from '../api'
 import { listStarredThreadIds, starThread, unstarThread, updateThreadTitle, deleteThread, updateThreadSidebarState } from '../api'
-import { isLocalMode, isDesktop } from '@arkloop/shared/desktop'
+import { isLocalMode, isDesktop, getDesktopPlatform } from '@arkloop/shared/desktop'
 import { ConfirmDialog } from '@arkloop/shared'
 import { ModeSwitch } from './ModeSwitch'
 import { useLocale } from '../contexts/LocaleContext'
@@ -51,6 +56,10 @@ type Props = {
   preserveExpandedLayout?: boolean
   /** 点到历史会话时先收起设置等全屏层；否则同 URL 的 navigate 不会触发，桌面端无法回到聊天 */
   beforeNavigateToThread?: () => void
+  rightPanelOpen?: boolean
+  onToggleRightPanel?: () => void
+  hasAppUpdate?: boolean
+  onOpenUpdateSettings?: () => void
 }
 
 type ProjectGroup = { path: string; label: string; threads: ThreadResponse[] }
@@ -259,11 +268,16 @@ export const Sidebar = memo(function Sidebar({
   onThreadDeleted,
   preserveExpandedLayout = false,
   beforeNavigateToThread,
+  rightPanelOpen = false,
+  onToggleRightPanel,
+  hasAppUpdate = false,
+  onOpenUpdateSettings,
 }: Props) {
   const { me, accessToken } = useAuth()
   const {
     isPrivateMode,
     pendingIncognitoMode,
+    togglePrivateMode,
     updateTitle: onThreadTitleUpdated,
     upsertThread,
     markCompletionRead,
@@ -275,6 +289,7 @@ export const Sidebar = memo(function Sidebar({
   const { settingsOpen: suppressActiveThreadHighlight, openSettings: onOpenSettings } = useSettingsUI()
   const { appMode, setAppMode, availableAppModes } = useAppModeUI()
   const desktopMode = isDesktop()
+  const isMacDesktop = desktopMode && getDesktopPlatform() === 'darwin'
   const isPrivateModeEffective = isPrivateMode || pendingIncognitoMode
   const isWorkMode = appMode === 'work'
   const navigate = useNavigate()
@@ -1591,8 +1606,38 @@ export const Sidebar = memo(function Sidebar({
         contain: 'layout paint style',
       }}
     >
-      {/* Desktop title bar spacer */}
-      {desktopMode && <div className="h-3" />}
+      {/* Desktop title bar spacer (Windows only, Mac has no title bar) */}
+      {desktopMode && !isMacDesktop && <div className="h-3" />}
+
+      {/* Mac desktop: navigation buttons beside traffic lights (hidden when collapsed) */}
+      {isMacDesktop && !collapsed && (
+        <div
+          className="flex items-center gap-0.5 shrink-0"
+          style={{ height: 36, paddingLeft: 76, paddingRight: 12, paddingTop: 4 }}
+        >
+          <button
+            onClick={() => onToggleCollapse('sidebar')}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+            aria-label={collapsed ? t.showSidebarAction : t.hideSidebarAction}
+          >
+            {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+          </button>
+          <button
+            onClick={() => window.history.back()}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+            aria-label={t.browserPanel.back}
+          >
+            <ChevronLeft size={17} />
+          </button>
+          <button
+            onClick={() => window.history.forward()}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+            aria-label={t.browserPanel.forward}
+          >
+            <ChevronRight size={17} />
+          </button>
+        </div>
+      )}
 
       {/* Non-desktop title bar or spacer */}
       {!desktopMode && (
@@ -1818,6 +1863,45 @@ export const Sidebar = memo(function Sidebar({
               </div>
             </div>
           </button>
+        )}
+
+        {/* Mac desktop: functional buttons (incognito, right panel, update) */}
+        {isMacDesktop && !visualCollapsed && (
+          <div className="flex items-center gap-0.5 px-1 pb-1">
+            {appMode !== 'work' && (
+              <button
+                onClick={togglePrivateMode}
+                className={[
+                  'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
+                  isPrivateModeEffective
+                    ? 'bg-[var(--c-bg-deep)] text-[var(--c-text-primary)]'
+                    : 'text-[var(--c-text-tertiary)] hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]',
+                ].join(' ')}
+                aria-label={t.toggleIncognito}
+              >
+                <Glasses size={17} />
+              </button>
+            )}
+            {onToggleRightPanel && (
+              <button
+                onClick={onToggleRightPanel}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+                aria-label={t.rightPanel.toggle}
+              >
+                {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+              </button>
+            )}
+            {hasAppUpdate && (
+              <button
+                onClick={() => onOpenUpdateSettings?.()}
+                className="relative flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-accent)] transition-colors hover:bg-[var(--c-bg-deep)]"
+                aria-label={t.desktopSettings.appUpdateAvailable}
+              >
+                <ArrowUp size={16} />
+                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[var(--c-accent)]" />
+              </button>
+            )}
+          </div>
         )}
 
         {/* Settings button: fixed pl-1 so the icon x-position never

@@ -15,7 +15,7 @@ import {
   SquarePen,
   X,
 } from 'lucide-react'
-import { getDesktopApi, getDesktopPlatform, isDesktop } from '@arkloop/shared/desktop'
+import { getDesktopApi, getDesktopPlatform } from '@arkloop/shared/desktop'
 import type { AppUpdaterState } from '@arkloop/shared/desktop'
 import { SpinnerIcon } from '@arkloop/shared/components/auth-ui'
 import { Button } from '@arkloop/shared'
@@ -31,8 +31,6 @@ import type { ThreadResponse } from '../api'
 import { useThreadLiveState } from '../contexts/thread-list'
 
 export const DESKTOP_TITLEBAR_HEIGHT = 36
-const WINDOWS_TITLEBAR_HEIGHT = 36
-const MAC_TITLEBAR_LEFT_PADDING = 76
 const DESKTOP_ICON_RAIL_LEFT_PADDING = 12
 const PINNED_MENU_OPEN_DELAY_MS = 70
 const PINNED_MENU_GAP = 4
@@ -92,9 +90,7 @@ export function DesktopTitleBar({
   const [pinnedMenuPosition, setPinnedMenuPosition] = useState<{ left: number; top: number }>({ left: 0, top: 0 })
   const [windowMaximized, setWindowMaximized] = useState(false)
   const desktopPlatform = getDesktopPlatform()
-  const isMac = desktopPlatform === 'darwin'
   const isWindows = desktopPlatform === 'win32'
-  const titleBarHeight = isWindows ? WINDOWS_TITLEBAR_HEIGHT : DESKTOP_TITLEBAR_HEIGHT
   const hasActionableAppUpdate =
     appUpdateState?.phase === 'available' ||
     appUpdateState?.phase === 'downloaded'
@@ -224,36 +220,32 @@ export function DesktopTitleBar({
     return () => document.removeEventListener('mousedown', handler)
   }, [updatePopoverOpen])
 
-  if (!isDesktop()) return null
+  if (!isWindows) return null
 
   const btnCls = [
     'flex h-8 w-8 items-center justify-center rounded-md',
     'text-[var(--c-text-tertiary)] transition-colors',
-    isWindows
-      ? 'hover:bg-[var(--title-btn-hover)] hover:text-[var(--c-text-primary)]'
-      : 'hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]',
+    'hover:bg-[var(--title-btn-hover)] hover:text-[var(--c-text-primary)]',
   ].join(' ')
 
   return (
     <div
       className="relative shrink-0"
       style={{
-        height: titleBarHeight,
-        paddingLeft: `${isMac ? MAC_TITLEBAR_LEFT_PADDING : DESKTOP_ICON_RAIL_LEFT_PADDING}px`,
-        paddingRight: isWindows ? 0 : '12px',
-        background: isWindows
-          ? 'color-mix(in srgb, var(--c-bg-sidebar) 92%, var(--c-bg-page))'
-          : 'var(--c-bg-sidebar)',
+        height: DESKTOP_TITLEBAR_HEIGHT,
+        paddingLeft: `${DESKTOP_ICON_RAIL_LEFT_PADDING}px`,
+        paddingRight: 0,
+        background: 'color-mix(in srgb, var(--c-bg-sidebar) 92%, var(--c-bg-page))',
         borderBottom: '0.5px solid var(--c-border-subtle)',
         WebkitAppRegion: 'drag',
       } as React.CSSProperties}
     >
       {/* sidebar and history controls */}
       <div
-        className={isWindows ? 'flex items-center gap-1.5' : 'flex items-center gap-1'}
+        className="flex items-center gap-1.5"
         style={{
           position: 'absolute',
-          left: isMac ? MAC_TITLEBAR_LEFT_PADDING : DESKTOP_ICON_RAIL_LEFT_PADDING,
+          left: DESKTOP_ICON_RAIL_LEFT_PADDING,
           top: 0,
           height: '100%',
           zIndex: 2,
@@ -329,17 +321,17 @@ export function DesktopTitleBar({
 
       {/* app actions and window controls */}
       <div
-        className={isWindows ? 'flex items-stretch' : 'flex items-center'}
+        className="flex items-stretch"
         style={{
           position: 'absolute',
-          right: isWindows ? 0 : 12,
+          right: 0,
           top: 0,
           bottom: 0,
           zIndex: 2,
           WebkitAppRegion: 'no-drag',
         } as React.CSSProperties}
       >
-        <div className={isWindows ? 'flex items-center justify-end gap-1 pr-2' : 'flex items-center justify-end'}>
+        <div className="flex items-center justify-end gap-1 pr-2">
           {showIncognitoToggle && onTogglePrivateMode && (
             <ActionIconButton
               onClick={onTogglePrivateMode}
