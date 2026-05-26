@@ -1606,29 +1606,31 @@ export const Sidebar = memo(function Sidebar({
       {isMacDesktop && !collapsed && (
         <div
           className="flex items-center gap-0.5 shrink-0"
-          style={{ height: 36, paddingLeft: 76, paddingRight: 12, paddingTop: 4 }}
+          style={{ height: 36, paddingLeft: 76, paddingRight: 12, paddingTop: 4, WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          <button
-            onClick={() => onToggleCollapse('sidebar')}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
-            aria-label={collapsed ? t.showSidebarAction : t.hideSidebarAction}
-          >
-            {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-          </button>
-          <button
-            onClick={() => window.history.back()}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
-            aria-label={t.browserPanel.back}
-          >
-            <ChevronLeft size={17} />
-          </button>
-          <button
-            onClick={() => window.history.forward()}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
-            aria-label={t.browserPanel.forward}
-          >
-            <ChevronRight size={17} />
-          </button>
+          <div className="flex items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <button
+              onClick={() => onToggleCollapse('sidebar')}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+              aria-label={collapsed ? t.showSidebarAction : t.hideSidebarAction}
+            >
+              {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            </button>
+            <button
+              onClick={() => window.history.back()}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+              aria-label={t.browserPanel.back}
+            >
+              <ChevronLeft size={17} />
+            </button>
+            <button
+              onClick={() => window.history.forward()}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
+              aria-label={t.browserPanel.forward}
+            >
+              <ChevronRight size={17} />
+            </button>
+          </div>
         </div>
       )}
 
