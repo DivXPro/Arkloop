@@ -30,8 +30,8 @@ import { formatDesktopAppVersion } from '../desktopVersion'
 import type { ThreadResponse } from '../api'
 import { useThreadLiveState } from '../contexts/thread-list'
 
-export const DESKTOP_TITLEBAR_HEIGHT = 44
-const WINDOWS_TITLEBAR_HEIGHT = 44
+export const DESKTOP_TITLEBAR_HEIGHT = 36
+const WINDOWS_TITLEBAR_HEIGHT = 36
 const MAC_TITLEBAR_LEFT_PADDING = 76
 const DESKTOP_ICON_RAIL_LEFT_PADDING = 12
 const PINNED_MENU_OPEN_DELAY_MS = 70
@@ -254,8 +254,8 @@ export function DesktopTitleBar({
         style={{
           position: 'absolute',
           left: isMac ? MAC_TITLEBAR_LEFT_PADDING : DESKTOP_ICON_RAIL_LEFT_PADDING,
-          top: isWindows ? 0 : 6,
-          height: isWindows ? '100%' : undefined,
+          top: 0,
+          height: '100%',
           zIndex: 2,
           WebkitAppRegion: 'no-drag',
         } as React.CSSProperties}
