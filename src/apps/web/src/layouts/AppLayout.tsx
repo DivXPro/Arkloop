@@ -30,7 +30,7 @@ import { isPerfDebugEnabled, recordPerfValue } from '../perfDebug'
 import { applyDevAppUpdateMock, resolveAppUpdaterApi } from '../devAppUpdateMock'
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'arkloop:web:sidebar_width'
-const SIDEBAR_COLLAPSED_WIDTH = 48
+const SIDEBAR_COLLAPSED_WIDTH = 0
 const SIDEBAR_DEFAULT_WIDTH = 284
 const SIDEBAR_MIN_WIDTH = 224
 const SIDEBAR_MAX_WIDTH = 420
@@ -89,9 +89,9 @@ function CollapsedSidebarTransitionOverlay({
       aria-hidden="true"
       className={[
         direction === 'enter' ? 'collapsed-sidebar-enter-overlay' : 'collapsed-sidebar-exit-overlay',
-        'theme-surface-sidebar pointer-events-none absolute inset-y-0 left-0 z-30 flex w-[48px] flex-col bg-[var(--c-bg-sidebar)]',
+        'theme-surface-sidebar pointer-events-none absolute inset-y-0 left-0 z-30 flex flex-col bg-[var(--c-bg-sidebar)]',
       ].join(' ')}
-      style={{ borderRight: '0.5px solid var(--c-border)' }}
+      style={{ borderRight: '0.5px solid var(--c-border)', width: SIDEBAR_COLLAPSED_WIDTH }}
       onAnimationEnd={onDone}
     >
       <div className="h-3 shrink-0" />
