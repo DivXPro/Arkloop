@@ -42,6 +42,7 @@ import {
   useRightPanelActions,
   useSearchUI,
   useSettingsUI,
+  useSidebarUI,
   useSkillPromptUI,
   useTitleBarRightPanelUI,
 } from '../contexts/app-ui'
@@ -177,6 +178,7 @@ export function WelcomePage() {
   const { openNotifications: onOpenNotifications, notificationVersion } = useNotificationsUI()
   const { openSettings: onOpenSettings } = useSettingsUI()
   const { appMode } = useAppModeUI()
+  const { sidebarCollapsed } = useSidebarUI()
   const { setRightPanelOpen } = useRightPanelActions()
   const { setTitleBarRightPanelClick } = useTitleBarRightPanelUI()
   const { pendingSkillPrompt, consumeSkillPrompt } = useSkillPromptUI()
@@ -567,7 +569,7 @@ export function WelcomePage() {
 
   return (
     <div ref={rootRef} className="flex h-full min-w-0 overflow-hidden">
-      {webglChecked && webglSupported && (
+      {sidebarCollapsed && webglChecked && webglSupported && (
         <WelcomeParticleBackgroundLazy containerRef={rootRef} />
       )}
       <div
