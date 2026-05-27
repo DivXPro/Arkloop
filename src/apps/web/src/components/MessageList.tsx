@@ -21,7 +21,7 @@ import { useActiveCodeExecutionId, usePanelActions, useShareModalState } from '.
 import { useAuth } from '../contexts/auth'
 import { useThreadList } from '../contexts/thread-list'
 import { apiBaseUrl } from '@arkloop/shared/api'
-import type { AgentMessage } from '../agent-ui'
+import type { AgentMessage, AgentAskUserFormContent } from '../agent-ui'
 import { copTimelinePayloadForSegment, type CopTimelinePayload, type TodoWriteRef } from '../copSegmentTimeline'
 import { buildResolvedPool, EMPTY_POOL, buildFallbackSegments } from '../copSubSegment'
 import { assistantTurnPlainText, splitWorkGroup, type AssistantTurnSegment, type WorkGroup as WorkGroupType } from '../assistantTurnSegments'
@@ -321,7 +321,8 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
       )
     if (hideTerminalRunMessage) return null
 
-    // Render ask_user_form messages as form cards
+    // Active ask_user forms are rendered exclusively in the bottom input area.
+    // Keeping the message-row prompt visible here causes duplicate prompt text.
     if (
       msg.role === 'assistant' &&
       msg.contentJson &&
@@ -330,6 +331,9 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
       handleAskUserFormSubmit &&
       handleAskUserFormDismiss
     ) {
+      const formContent = msg.contentJson as AgentAskUserFormContent
+      const isActivePendingForm = formContent.status === 'pending' && run.activeRunId === formContent.runId
+      if (isActivePendingForm) return null
       return (
         <div
           key={messageClientMessageId(msg) ?? msg.id}
