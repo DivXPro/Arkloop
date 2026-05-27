@@ -572,6 +572,12 @@ export const en: LocaleStrings = {
     submitting: "Submitting...",
     next: "Next",
     back: "Back",
+    yes: "Yes",
+    no: "No",
+    hideAnswers: "Hide answers",
+    showAnswers: (count: number) => `Show ${count} answer${count > 1 ? 's' : ''}`,
+    selectPlaceholder: "Select...",
+    optionalPlaceholder: "Optional",
   },
   // document panel
   documentPanel: {

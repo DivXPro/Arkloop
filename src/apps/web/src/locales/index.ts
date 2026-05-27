@@ -561,6 +561,12 @@ export interface LocaleStrings {
     submitting: string
     next: string
     back: string
+    yes: string
+    no: string
+    hideAnswers: string
+    showAnswers: (count: number) => string
+    selectPlaceholder: string
+    optionalPlaceholder: string
   }
   // document panel
   documentPanel: {
