@@ -1,45 +1,49 @@
-# 电商主图提示词生成器
+# 电商图生成助手
 
 通过结构化表单收集需求，生成每张图片的专业提示词，经用户确认后批量调用 `image_generate` 出图。
 
 ## 触发行为
 
-用户明确说"帮我生成电商图"、"做几张主图"等，此时用户意图明确，**不要做任何额外操作**（如引导上传到电商系统、要求补齐商品信息等）。直接进入核心流程，用 ask_user 表单收集需求后生成图片。
+用户明确说"帮我生成电商图"、"做几张主图"等，此时用户意图明确，**不要做任何额外操作**（如引导上传到电商系统、要求补齐商品信息等）。直接进入核心流程。
 
 **需求分流：**
 - 如果用户提到"主图"、"首图"、"商品图"、"SKU 图片" → 进入「主图生成流程」
 - 如果用户提到"详情页"、"详情图"、"详情页模块"、"店铺装修" → 进入「电商详情页图生成流程」
 
-## 核心流程：主图生成（严格按顺序执行，不可跳过任何步骤）
+---
+
+## 核心流程：主图生成
 
 ```
-Step 1: 收集需求（两个 ask_user 表单）
-Step 2: 参数映射
-Step 3: 生成提示词
-Step 4: 用户确认（必须！用 ask_user 表单）
-Step 5: 批量生图
+Step 1: 检查是否有商品参考图
+Step 2: 收集需求（一个 ask_user 表单）
+Step 3: 参数映射
+Step 4: 生成提示词
+Step 5: 用户确认（必须！用 ask_user 表单）
+Step 6: 批量生图
 ```
 
-**关键约束：Step 4 是强制步骤。未获得用户确认前，绝对不要调用 image_generate。**
+**关键约束：Step 5 是强制步骤。未获得用户确认前，绝对不要调用 image_generate。**
 
-## Step 1: 收集需求
+### Step 1: 检查商品参考图
 
-**分两次调用 `ask_user` 工具（display_mode: "form"），必须等待第一次返回后再发起第二次。**
+**在执行任何步骤前，先检查当前会话中是否有用户上传的商品图片。**
 
-### 第一次 ask_user：产品与营销信息
+- **如果发现有上传的商品图片**（如产品白底图、场景图等）：正常进入 Step 2 执行流程。
+- **如果没有发现任何商品图片**：**停止执行流程**，友好地提示用户先上传商品图片，例如：
+  > "我需要您提供商品图片作为参考，才能生成更精准的电商图。请先上传您的产品图片（如白底图、场景图等），然后我会继续帮您生成。"
+
+  等待用户上传图片后，再进入 Step 2。
+
+### Step 2: 收集需求
+
+**调用一次 `ask_user` 工具（display_mode: "form"），在一个表单中收集所有信息。**
 
 | key | type | title | 说明 |
 |-----|------|-------|------|
 | `design_brief` | string | 设计简报 | 多行文本。产品核心卖点、USP、视觉方向、希望强调的卖点。maxLength: 300 |
 | `promotion_info` | string | 促销信息 | 多行文本。促销活动详情：折扣力度、活动名称、优惠信息等。maxLength: 300 |
 | `language` | string | 输出语言 | enum: ["zh", "en"], enumNames: ["中文", "English"] |
-
-### 第二次 ask_user：图像配置与模块选择
-
-**必须在第一次 ask_user 返回后，再发起第二次 ask_user。**
-
-| key | type | title | 说明 |
-|-----|------|-------|------|
 | `version` | string | 主图版本（必选） | enum: ["practical", "cinematic"], enumNames: ["实用版 - 清晰还原，快速出图", "大片版 - 高级质感，品牌差异，转化率更高"]。required: true |
 | `aspect_ratio` | string | 宽高比 | enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]。default: "1:1" |
 | `resolution` | string | 分辨率 | enum: ["1k", "2k", "4k"]，enumNames: ["标清 1K", "高清 2K", "超清 4K"]。default: "1k" |
@@ -58,11 +62,11 @@ Step 5: 批量生图
 | `packaging` | 包装展示 | 礼盒、配件与开箱细节 |
 | `warranty` | 权益保障 | 售后、质保与信任背书 |
 
-## Step 2: 宽高比与参数映射
+### Step 3: 宽高比与参数映射
 
 在调用 `image_generate` 之前，将用户选择的宽高比和分辨率映射为实际参数：
 
-### 宽高比 → size 映射
+#### 宽高比 → size 映射
 
 | aspect_ratio | size |
 |-------------|------|
@@ -74,7 +78,7 @@ Step 5: 批量生图
 | 3:2 | 1536x1024 |
 | 2:3 | 1024x1536 |
 
-### 分辨率 → quality 映射
+#### 分辨率 → quality 映射
 
 | resolution | quality |
 |-----------|---------|
@@ -84,19 +88,19 @@ Step 5: 批量生图
 
 如果 resolution 为 "4k"，在 prompt 末尾追加 `, 4K ultra high resolution, extremely detailed`。
 
-## Step 3: 生成提示词
+### Step 4: 生成提示词
 
 根据用户的选择，为每个选中的模块生成一条专业提示词。
 
-### 提示词生成规则
+#### 提示词生成规则
 
-每条提示词由三部分组成，用英文撰写（如 language 为 zh 则在末尾加中文风格词）：
+每条提示词由三部分组成：
 
 ```
 [产品描述] + [场景指令] + [风格与质量词]
 ```
 
-### 版本风格差异（关键）
+#### 版本风格差异（关键）
 
 **实用版 (practical):**
 - 风格词：clean product photography, studio lighting, white background, commercial product shot, e-commerce ready
@@ -106,7 +110,7 @@ Step 5: 批量生图
 - 风格词：cinematic lighting, luxury aesthetic, premium commercial photography, shallow depth of field, editorial quality, high-end retouching
 - 强调：氛围感、品牌高级感、情感共鸣
 
-### 各模块场景指令
+#### 各模块场景指令
 
 **首屏 KV (hero_kv):**
 - 构图：产品居中偏上，占画面 60-70%
@@ -173,7 +177,7 @@ Step 5: 批量生图
 - 大片版示例：
   > Premium product with elegantly designed service assurance elements, sophisticated badge design, conveying trust and exclusivity, high-end brand after-sales visual, 8K
 
-### 提示词组装
+#### 提示词组装
 
 对每个选中的模块：
 1. 将设计简报中的产品描述替换模板中的 `[产品]`
@@ -182,7 +186,7 @@ Step 5: 批量生图
 4. 根据分辨率追加清晰度词
 5. 提示词语言与用户选择的 `language` 一致：如 "zh" 则用中文撰写，如 "en" 则用英文撰写。风格词部分保持英文以确保生图模型理解准确
 
-## Step 4: 用户确认提示词（强制步骤）
+### Step 5: 用户确认提示词（强制步骤）
 
 **此步骤不可跳过！在用户确认之前，不得调用 image_generate。**
 
@@ -192,9 +196,9 @@ Step 5: 批量生图
 - key: `confirmed`，type: boolean，title: "提示词确认"，description: "确认无误，开始生成图片"。required: true
 - 每张图一个 key 为 `prompt_N`（N 从 0 开始）的 string 字段，title 为模块中文名，default 为生成的提示词文本，multiline: true。用户可以直接修改。
 
-**只有当用户填写表单且 confirmed 为 true 时，才能进入 Step 5。** 如果 confirmed 为 false 或用户未确认，不要生图。
+**只有当用户填写表单且 confirmed 为 true 时，才能进入 Step 6。** 如果 confirmed 为 false 或用户未确认，不要生图。
 
-## Step 5: 批量生成图片
+### Step 6: 批量生成图片
 
 用户确认后，对每条确认的提示词调用 `image_generate` 工具：
 
@@ -208,12 +212,12 @@ image_generate(
 ```
 
 关键点：
-- **一定要传入 size 参数**，从 Step 2 的映射表中取值
+- **一定要传入 size 参数**，从 Step 3 的映射表中取值
 - 逐条调用，每次调用后等待结果
 - 如果某张失败，记录失败信息并继续生成下一张
 - 全部完成后，总结生成结果：成功几张、失败几张
 
-## 注意事项
+### 主图生成注意事项
 
 - 设计简报和促销信息可能为空，此时提示词中省略对应部分
 - 模块至少选择 1 个
@@ -224,54 +228,45 @@ image_generate(
 
 ---
 
-## 电商详情页图生成
+## 核心流程：电商详情页图生成
 
 当用户明确要求生成"详情页"、"详情图"或选择详情页模块时，执行以下流程。
 
-### 详情页核心流程（严格按顺序执行，不可跳过任何步骤）
-
 ```
-Step 1: 收集需求（三次 ask_user 表单）
-Step 2: 参数映射
-Step 3: 生成详情页规划方案
-Step 4: 生成各模块提示词
+Step 1: 检查是否有商品参考图
+Step 2: 收集需求（一个 ask_user 表单）
+Step 3: 参数映射
+Step 4: 生成详情页规划方案与各模块提示词
 Step 5: 用户确认（必须！用 ask_user 表单）
 Step 6: 批量生图
 ```
 
 **关键约束：Step 5 是强制步骤。未获得用户确认前，绝对不要调用 image_generate。**
 
-### Step 1: 收集需求
+### Step 1: 检查商品参考图
 
-**分三次调用 `ask_user` 工具（display_mode: "form"），必须等待前一次返回后再发起下一次。**
+**在执行任何步骤前，先检查当前会话中是否有用户上传的商品图片。**
 
-#### 第一次 ask_user：产品素材与营销信息
+- **如果发现有上传的商品图片**（如产品白底图、场景图等）：正常进入 Step 2 执行流程。
+- **如果没有发现任何商品图片**：**停止执行流程**，友好地提示用户先上传商品图片，例如：
+  > "我需要您提供商品图片作为参考，才能生成更精准的电商详情页图。请先上传您的产品图片（如白底图、场景图等），然后我会继续帮您生成。"
+
+  等待用户上传图片后，再进入 Step 2。
+
+### Step 2: 收集需求
+
+**调用一次 `ask_user` 工具（display_mode: "form"），在一个表单中收集所有信息。**
 
 | key | type | title | 说明 |
 |-----|------|-------|------|
-| `product_images_desc` | string | 已上传参考图 | 用户已上传的产品参考图描述，如"正面白底图2张、场景图1张"。如未上传可填"无"。maxLength: 200 |
 | `product_info` | string | 产品信息 | 产品名称、品类、目标人群。maxLength: 100 |
 | `design_brief` | string | 设计简报 | 产品核心卖点、USP、视觉方向、希望强调的卖点。maxLength: 300 |
 | `promotion_info` | string | 促销信息 | 促销活动详情：折扣力度、活动名称、优惠信息等。maxLength: 300 |
-
-#### 第二次 ask_user：图像配置
-
-**必须在第一次 ask_user 返回后，再发起第二次 ask_user。**
-
-| key | type | title | 说明 |
-|-----|------|-------|------|
 | `version` | string | 详情页版本（必选） | enum: ["practical", "cinematic"], enumNames: ["实用版 - 清晰还原，快速出图", "大片版 - 高级质感，品牌差异，转化率更高"]。required: true |
 | `aspect_ratio` | string | 宽高比 | enum: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]。default: "3:4" |
 | `resolution` | string | 分辨率 | enum: ["1k", "2k", "4k"]，enumNames: ["标清 1K", "高清 2K", "超清 4K"]。default: "1k" |
 | `language` | string | 输出语言 | enum: ["zh", "en"], enumNames: ["中文", "English"] |
 | `market` | string | 电商市场 | enum: ["domestic", "international"], enumNames: ["国内电商", "国外电商"]。default: "domestic" |
-
-#### 第三次 ask_user：详情页模块选择
-
-**必须在第二次 ask_user 返回后，再发起第三次 ask_user。**
-
-| key | type | title | 说明 |
-|-----|------|-------|------|
 | `modules` | array | 详情页模块（多选） | items.anyOf 见下方模块列表。minItems: 1 |
 
 **详情页模块列表（items.anyOf：const 为值，title 为显示名）：**
@@ -297,7 +292,7 @@ Step 6: 批量生图
 | `buyer_show` | 买家秀 | 真实用户视角，增强可信度 |
 | `blogger_rec` | 博主推荐图 | 达人种草/测评推荐风格，社交传播感 |
 
-### Step 2: 宽高比与参数映射
+### Step 3: 宽高比与参数映射
 
 与主图生成流程的映射规则一致：
 
@@ -319,7 +314,9 @@ Step 6: 批量生图
 
 如果 resolution 为 "4k"，在 prompt 末尾追加 `, 4K ultra high resolution, extremely detailed`。
 
-### Step 3: 生成详情页规划方案
+### Step 4: 生成详情页规划方案与各模块提示词
+
+#### 4.1 生成规划方案
 
 在生成提示词之前，先根据用户选择的模块生成一份**详情页规划方案**。方案用 markdown 格式输出，包含以下内容：
 
@@ -327,19 +324,19 @@ Step 6: 批量生图
 2. **模块排布逻辑**：各模块的推荐排序与衔接关系
 3. **逐模块规划**：每个选中模块的内容重点、构图建议、与前后模块的衔接
 
-### Step 4: 生成各模块提示词
+#### 4.2 生成各模块提示词
 
 根据用户的选择，为每个选中的模块生成一条专业提示词。
 
-#### 提示词生成规则
+##### 提示词生成规则
 
-每条提示词由三部分组成，用英文撰写（如 language 为 zh 则在末尾加中文风格词）：
+每条提示词由三部分组成：
 
 ```
 [产品描述] + [场景指令] + [风格与质量词]
 ```
 
-#### 版本风格差异（同主图流程）
+##### 版本风格差异（同主图流程）
 
 **实用版 (practical):**
 - 风格词：clean product photography, studio lighting, white background, commercial product shot, e-commerce ready
@@ -349,7 +346,7 @@ Step 6: 批量生图
 - 风格词：cinematic lighting, luxury aesthetic, premium commercial photography, shallow depth of field, editorial quality, high-end retouching
 - 强调：氛围感、品牌高级感、情感共鸣
 
-#### 各模块场景指令
+##### 各模块场景指令
 
 **首屏主视觉 (hero_kv):**
 - 构图：产品居中偏上，占画面 60-70%，下方或侧面留白放文案
@@ -465,7 +462,7 @@ Step 6: 批量生图
 - 实用版示例：
   > Authentic user-generated style photo of [产品] in real home setting, natural lighting, candid composition, relatable everyday scene
 - 大片版示例：
-  > Polished lifestyle photo of [产品] in aspirational yet realistic setting, natural window light, candid moment, editorial lifestyle photography, 8K
+  > Polished lifestyle photo of [产品] in an aspirational yet realistic setting, natural window light, candid moment, editorial lifestyle photography, 8K
 
 **博主推荐图 (blogger_rec):**
 - 构图：达人/博主风格的产品展示，种草感
@@ -475,7 +472,7 @@ Step 6: 批量生图
 - 大片版示例：
   > Premium influencer showcase of [产品], artfully styled with lifestyle props, cinematic lighting, aspirational yet authentic, editorial social content, 8K
 
-#### 提示词组装
+##### 提示词组装
 
 对每个选中的模块：
 1. 将设计简报中的产品描述替换模板中的 `[产品]`
@@ -511,7 +508,7 @@ image_generate(
 ```
 
 关键点：
-- **一定要传入 size 参数**，从 Step 2 的映射表中取值
+- **一定要传入 size 参数**，从 Step 3 的映射表中取值
 - 逐条调用，每次调用后等待结果
 - 如果某张失败，记录失败信息并继续生成下一张
 - 全部完成后，总结生成结果：成功几张、失败几张，并说明每张图对应的详情页模块用途
