@@ -17,6 +17,7 @@ import { isPreviewModeToggleable } from './rendererKind'
 import { extractPlanNameFromMarkdown, isPlanMarkdownPath, parsePlanMarkdown, PLAN_TODOS_UPDATED_EVENT, resolvePlanBuildState } from '../../planMetadata'
 import { useLocale } from '../../contexts/LocaleContext'
 import { ModelPicker } from '../ModelPicker'
+import { McpAppIframe } from '../McpAppIframe'
 
 type ViewMode = 'preview' | 'source'
 
@@ -34,6 +35,7 @@ type Props = {
   onBuildPlan?: (message: string) => void
   onOpenModelSettings?: () => void
   onPlanTitleChange?: (title: string) => void
+  onSendMessage?: (text: string) => void
 }
 
 function releaseResource(resource: PreviewResource | null): void {
@@ -163,6 +165,7 @@ export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({
   onBuildPlan,
   onOpenModelSettings,
   onPlanTitleChange,
+  onSendMessage,
 }: Props) {
   const { locale } = useLocale()
   const [internalMode, setInternalMode] = useState<ViewMode>('preview')
@@ -252,6 +255,27 @@ export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({
   const closeLabel = locale === 'zh' ? '关闭' : 'Close'
   const buildLabel = 'Build'
   const plansLabel = 'Plans'
+
+  if (resource.kind === 'mcp-app') {
+    return (
+      <div style={{ height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--c-bg-page)' }}>
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <McpAppIframe
+            uri={resource.uri}
+            content={resource.content}
+            csp={resource.csp}
+            toolOutput={resource.initialData}
+            serverId={resource.serverId}
+            accessToken={accessToken}
+            onSendMessage={onSendMessage}
+            hideHeader
+            noBorder
+            style={{ width: '100%', height: '100%', minHeight: '400px' }}
+          />
+        </div>
+      </div>
+    )
+  }
 
   if (isPlan && loaded && plan) {
     const path = planReferencePath(resource, loaded)

@@ -3,6 +3,8 @@ package mcp
 import (
 	"fmt"
 	"strings"
+
+	"arkloop/services/worker/internal/llm"
 )
 
 type Tool struct {
@@ -10,11 +12,29 @@ type Tool struct {
 	Title       *string
 	Description *string
 	InputSchema map[string]any
+	Meta        map[string]any
+	Annotations *llm.ToolAnnotations
 }
 
 type ToolCallResult struct {
 	Content []map[string]any
 	IsError bool
+}
+
+type Resource struct {
+	URI         string
+	Name        string
+	MimeType    string
+	Annotations map[string]any
+	Meta        map[string]any
+}
+
+type ResourceContent struct {
+	URI      string
+	MimeType string
+	Text     string
+	Blob     []byte
+	Meta     map[string]any
 }
 
 type TimeoutError struct {

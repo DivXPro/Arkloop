@@ -9,6 +9,7 @@ import { MarkdownRenderer } from './MarkdownRenderer'
 import { GeneratedImageGroup } from './GeneratedImageGroup'
 import { generatedImageKeySet } from '../generatedImages'
 import { WidgetBlock } from './WidgetBlock'
+import { ResourceUIPreview } from './ResourceUIPreview'
 import { IncognitoDivider } from './IncognitoDivider'
 import { useLocale } from '../contexts/LocaleContext'
 import { useChatSession } from '../contexts/chat-session'
@@ -64,6 +65,7 @@ export type MessageListProps = {
   handleArtifactAction: ComponentProps<typeof WidgetBlock>['onAction']
   handleAskUserFormSubmit?: (requestId: string, answers: Record<string, unknown>) => Promise<void>
   handleAskUserFormDismiss?: (requestId: string) => Promise<void>
+  onSendMessage?: (text: string) => void
   openDocumentPanel: (artifact: ArtifactRef, options?: { trigger?: HTMLElement | null; artifacts?: ArtifactRef[]; runId?: string }) => void
   openResourcePanel: (resource: ResourceRef, options?: { trigger?: HTMLElement | null; artifacts?: ArtifactRef[]; runId?: string }) => void
   openCodePanel: (ce: CodeExecution) => void
@@ -99,6 +101,7 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
   handleArtifactAction,
   handleAskUserFormSubmit,
   handleAskUserFormDismiss,
+  onSendMessage,
   openDocumentPanel,
   openResourcePanel,
   openCodePanel,
@@ -541,6 +544,36 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
           {effectiveGeneratedImages && effectiveGeneratedImages.length > 0 && (
             <GeneratedImageGroup items={effectiveGeneratedImages} accessToken={accessToken} />
           )}
+          {(() => {
+            const resources = meta.getMeta(msg.id)?.resources
+            if (!resources || resources.length === 0) return null
+            return (
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {resources.map((res, ri) => (
+                  <ResourceUIPreview
+                    key={`${msg.id}-resource-${res.key}-${ri}`}
+                    resource={res}
+                    accessToken={accessToken}
+                    displayMode="card"
+                    onExpand={() => {
+                      openResourcePanel({
+                        kind: 'mcp-app',
+                        uri: res.uri,
+                        content: res.content ?? '',
+                        filename: res.filename,
+                        mimeType: res.mimeType,
+                        size: res.size,
+                        csp: res.csp,
+                        initialData: res.initialData,
+                        serverId: res.serverId,
+                      })
+                    }}
+                    onSendMessage={onSendMessage}
+                  />
+                ))}
+              </div>
+            )
+          })()}
           {idx === messages.length - 1 && !isStreaming && !sending && (
             <AssistantActionBar
               textToCopy={assistantTurnPlainText(historicalTurn!)}

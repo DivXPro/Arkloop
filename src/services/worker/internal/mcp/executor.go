@@ -3,9 +3,12 @@ package mcp
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
+	"arkloop/services/shared/objectstore"
 	"arkloop/services/worker/internal/tools"
 )
 
@@ -20,17 +23,23 @@ const (
 type ToolExecutor struct {
 	server                   ServerConfig
 	remoteToolNameByToolName map[string]string
+	resourceURIByToolName    map[string]string
 	pool                     *Pool
 }
 
-func NewToolExecutor(server ServerConfig, remote map[string]string, pool *Pool) *ToolExecutor {
+func NewToolExecutor(server ServerConfig, remote map[string]string, resourceURIs map[string]string, pool *Pool) *ToolExecutor {
 	toolMap := map[string]string{}
 	for key, value := range remote {
 		toolMap[key] = value
 	}
+	uriMap := map[string]string{}
+	for key, value := range resourceURIs {
+		uriMap[key] = value
+	}
 	return &ToolExecutor{
 		server:                   server,
 		remoteToolNameByToolName: toolMap,
+		resourceURIByToolName:    uriMap,
 		pool:                     pool,
 	}
 }
@@ -43,9 +52,16 @@ func (e *ToolExecutor) Execute(
 	_ string,
 ) tools.ExecutionResult {
 	started := time.Now()
+	serverID := strings.TrimSpace(e.server.ServerID)
+	slog.DebugContext(ctx, "mcp: Execute start",
+		"tool_name", toolName,
+		"server_id", serverID,
+		"remote_name", e.remoteToolNameByToolName[toolName],
+	)
 
 	remoteName := e.remoteToolNameByToolName[toolName]
 	if remoteName == "" {
+		slog.DebugContext(ctx, "mcp: Execute aborted, tool not registered", "tool_name", toolName, "server_id", serverID)
 		return tools.ExecutionResult{
 			Error: &tools.ExecutionError{
 				ErrorClass: ErrorClassMcpProtocolError,
@@ -68,6 +84,11 @@ func (e *ToolExecutor) Execute(
 
 	client, err := pool.Borrow(ctx, e.server)
 	if err != nil {
+		slog.DebugContext(ctx, "mcp: Execute borrow failed",
+			"tool_name", toolName,
+			"server_id", serverID,
+			"error", err.Error(),
+		)
 		return tools.ExecutionResult{
 			Error: &tools.ExecutionError{
 				ErrorClass: ErrorClassMcpProtocolError,
@@ -77,6 +98,7 @@ func (e *ToolExecutor) Execute(
 			DurationMs: durationMs(started),
 		}
 	}
+	slog.DebugContext(ctx, "mcp: Execute borrow ok", "tool_name", toolName, "server_id", serverID)
 
 	callCtx := ctx
 	if timeoutMs > 0 {
@@ -88,6 +110,12 @@ func (e *ToolExecutor) Execute(
 
 	result, err := client.CallTool(callCtx, remoteName, args, timeoutMs)
 	if err != nil {
+		slog.DebugContext(ctx, "mcp: Execute CallTool failed",
+			"tool_name", toolName,
+			"server_id", serverID,
+			"remote_name", remoteName,
+			"error", err.Error(),
+		)
 		return tools.ExecutionResult{
 			Error:      toExecutionError(err, toolName, e.server.ServerID),
 			DurationMs: durationMs(started),
@@ -95,6 +123,12 @@ func (e *ToolExecutor) Execute(
 	}
 
 	if result.IsError {
+		slog.DebugContext(ctx, "mcp: Execute CallTool returned isError",
+			"tool_name", toolName,
+			"server_id", serverID,
+			"remote_name", remoteName,
+			"content_count", len(result.Content),
+		)
 		return tools.ExecutionResult{
 			Error: &tools.ExecutionError{
 				ErrorClass: ErrorClassMcpToolError,
@@ -110,8 +144,97 @@ func (e *ToolExecutor) Execute(
 	}
 
 	content, attachments := splitMCPContent(result.Content)
+
+	resultJSON := map[string]any{"content": content}
+	slog.DebugContext(ctx, "mcp: Execute CallTool ok",
+		"tool_name", toolName,
+		"server_id", serverID,
+		"remote_name", remoteName,
+		"content_count", len(result.Content),
+		"attachment_count", len(attachments),
+	)
+
+	resourceURI := e.resourceURIByToolName[toolName]
+	if resourceURI != "" {
+		resourceContent, err := client.ReadResource(callCtx, resourceURI, timeoutMs)
+		if err != nil {
+			slog.WarnContext(ctx, "mcp ext-apps: read resource failed", "tool_name", toolName, "resource_uri", resourceURI, "err", err.Error())
+		} else if resourceContent.Text == "" && len(resourceContent.Blob) == 0 {
+			slog.WarnContext(ctx, "mcp ext-apps: resource content empty", "tool_name", toolName, "resource_uri", resourceURI)
+		} else {
+			data := []byte(resourceContent.Text)
+			if len(data) == 0 {
+				data = resourceContent.Blob
+			}
+			mimeType := resourceContent.MimeType
+			if mimeType == "" {
+				mimeType = "text/html;profile=mcp-app"
+			}
+
+			var csp map[string]any
+			if resourceContent.Meta != nil {
+				if metaUI, ok := resourceContent.Meta["ui"].(map[string]any); ok {
+					if cspRaw, ok := metaUI["csp"].(map[string]any); ok {
+						csp = cspRaw
+					}
+				}
+			}
+
+			store := e.pool.ArtifactStore()
+			if store == nil {
+				slog.WarnContext(ctx, "mcp ext-apps: artifact store nil, storing resource inline", "tool_name", toolName)
+				resultJSON["resources"] = []map[string]any{
+					{
+						"key":       resourceURI,
+						"uri":       resourceURI,
+						"filename":  fmt.Sprintf("mcp-app-%s.html", toolName),
+						"size":      len(data),
+						"mime_type": mimeType,
+						"csp":       csp,
+						"content":   string(data),
+						"server_id": e.server.ServerID,
+					},
+				}
+			} else {
+				key := buildMcpAppArtifactKey(execCtx, toolName)
+				filename := fmt.Sprintf("mcp-app-%s.html", toolName)
+				accountID := "_anonymous"
+				if execCtx.AccountID != nil {
+					accountID = execCtx.AccountID.String()
+				}
+				var threadID *string
+				if execCtx.ThreadID != nil {
+					value := execCtx.ThreadID.String()
+					threadID = &value
+				}
+				metadata := objectstore.ArtifactMetadata(objectstore.ArtifactOwnerKindRun, execCtx.RunID.String(), accountID, threadID)
+				putErr := store.PutObject(ctx, key, data, objectstore.PutOptions{
+					ContentType: mimeType,
+					Metadata:    metadata,
+				})
+				if putErr != nil {
+					slog.ErrorContext(ctx, "mcp ext-apps: put artifact failed", "tool_name", toolName, "key", key, "err", putErr.Error())
+				} else {
+					resultJSON["resources"] = []map[string]any{
+						{
+							"key":       key,
+							"uri":       resourceURI,
+							"filename":  filename,
+							"size":      len(data),
+							"mime_type": mimeType,
+							"csp":       csp,
+							"content":   string(data),
+							"server_id": e.server.ServerID,
+						},
+					}
+					slog.InfoContext(ctx, "mcp ext-apps: artifact uploaded", "tool_name", toolName, "key", key, "size", len(data))
+				}
+			}
+		}
+	}
+
 	return tools.ExecutionResult{
-		ResultJSON:   map[string]any{"content": content},
+		ResultJSON:   resultJSON,
 		ContentParts: attachments,
 		DurationMs:   durationMs(started),
 	}
@@ -124,8 +247,17 @@ func splitMCPContent(content []map[string]any) ([]map[string]any, []tools.Conten
 	cleaned := make([]map[string]any, 0, len(content))
 	attachments := make([]tools.ContentAttachment, 0)
 	for _, item := range content {
-		if strings.EqualFold(strings.TrimSpace(stringFromAny(item["type"])), "image") {
+		itemType := strings.TrimSpace(stringFromAny(item["type"]))
+		if strings.EqualFold(itemType, "image") {
 			next, attachment, ok := imageContentAttachment(item)
+			cleaned = append(cleaned, next)
+			if ok {
+				attachments = append(attachments, attachment)
+			}
+			continue
+		}
+		if strings.EqualFold(itemType, "resource") {
+			next, attachment, ok := resourceContentAttachment(item)
 			cleaned = append(cleaned, next)
 			if ok {
 				attachments = append(attachments, attachment)
@@ -251,4 +383,47 @@ func durationMs(started time.Time) int {
 		return 0
 	}
 	return millis
+}
+
+func resourceContentAttachment(item map[string]any) (map[string]any, tools.ContentAttachment, bool) {
+	mimeType := firstMCPString(item["mimeType"], item["mime_type"])
+	if mimeType == "" {
+		mimeType = "text/html"
+	}
+	uri := strings.TrimSpace(stringFromAny(item["uri"]))
+	text := strings.TrimSpace(stringFromAny(item["text"]))
+	data := []byte(text)
+	if len(data) == 0 {
+		dataText := strings.TrimSpace(stringFromAny(item["data"]))
+		if decoded, err := base64.StdEncoding.DecodeString(dataText); err == nil {
+			data = decoded
+		}
+	}
+	if uri == "" && len(data) == 0 {
+		return map[string]any{
+			"type":     "resource",
+			"mimeType": mimeType,
+			"error":    "invalid_resource_data",
+		}, tools.ContentAttachment{}, false
+	}
+	return map[string]any{
+		"type":     "resource",
+		"mimeType": mimeType,
+		"uri":      uri,
+		"bytes":    len(data),
+		"attached": true,
+	}, tools.ContentAttachment{
+		MimeType: mimeType,
+		Data:     data,
+		URI:      uri,
+		Text:     text,
+	}, true
+}
+
+func buildMcpAppArtifactKey(execCtx tools.ExecutionContext, toolName string) string {
+	accountID := "_anonymous"
+	if execCtx.AccountID != nil {
+		accountID = execCtx.AccountID.String()
+	}
+	return fmt.Sprintf("%s/%s/mcp-app-%s.html", accountID, execCtx.RunID.String(), toolName)
 }

@@ -279,6 +279,9 @@ var anthropicSymptoms = []Symptom{
 				return false
 			}
 			lower := strings.ToLower(c.RawBody)
+			if strings.Contains(lower, "reasoning_content") {
+				return false // handled by SymptomReasoningContentPassback
+			}
 			return (strings.Contains(lower, "thinking mode") || strings.Contains(lower, "thinking_mode")) &&
 				strings.Contains(lower, "content") &&
 				strings.Contains(lower, "pass") &&

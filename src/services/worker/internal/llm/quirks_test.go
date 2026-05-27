@@ -168,7 +168,7 @@ func TestQuirkMatch_ForceTempOneOnThinking(t *testing.T) {
 }
 
 func TestQuirkMatch_EchoEmptyTextOnThinking(t *testing.T) {
-	q := anthropicQuirks[3]
+	q := findAnthropicQuirk(QuirkEchoEmptyTextOnThink)
 	if q.ID != QuirkEchoEmptyTextOnThink {
 		t.Fatalf("unexpected id %s", q.ID)
 	}
@@ -380,7 +380,7 @@ func TestQuirkApply_ForceTempOneOnThinking(t *testing.T) {
 }
 
 func TestQuirkMatch_StripCacheControl(t *testing.T) {
-	q := anthropicQuirks[4]
+	q := findAnthropicQuirk(QuirkStripCacheControl)
 	if q.ID != QuirkStripCacheControl {
 		t.Fatalf("unexpected id %s", q.ID)
 	}
@@ -533,6 +533,15 @@ func TestDetectQuirk(t *testing.T) {
 	}
 }
 
+func findAnthropicQuirk(id QuirkID) Quirk {
+	for _, q := range anthropicQuirks {
+		if q.ID == id {
+			return q
+		}
+	}
+	return Quirk{}
+}
+
 // matchQuirkForTest 把旧测试的 q.Match(status, body) 适配到新结构：
 // 先跑 symptom detector，再判断目标 quirk 的 symptom 是否命中。
 func matchQuirkForTest(q Quirk, status int, body string) bool {
@@ -554,9 +563,15 @@ func matchQuirkForTest(q Quirk, status int, body string) bool {
 
 // detectQuirkForTest 兼容旧测试签名：传入 status+body+registry，内部跑 symptom detect。
 func detectQuirkForTest(status int, body string, registry []Quirk) (QuirkID, bool) {
+	// Use the first quirk's symptom to determine which symptom registry to use.
+	// Quirks that exist in both registries (like EchoReasoningContent) are excluded
+	// from this heuristic — only Anthropic-exclusive quirks trigger anthropicSymptoms.
 	symRegistry := openAISymptoms
-	if len(registry) > 0 && len(anthropicQuirks) > 0 && &registry[0] == &anthropicQuirks[0] {
-		symRegistry = anthropicSymptoms
+	for _, q := range registry {
+		if q.ID == QuirkStripUnsignedThinking || q.ID == QuirkEchoEmptyTextOnThink || q.ID == QuirkStripCacheControl {
+			symRegistry = anthropicSymptoms
+			break
+		}
 	}
 	syms := DetectSymptoms(SymptomMatchContext{Status: status, RawBody: body}, symRegistry)
 	return detectQuirk(syms, registry)

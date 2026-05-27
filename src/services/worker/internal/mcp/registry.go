@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strconv"
@@ -20,10 +21,11 @@ import (
 var toolNameSafeRegex = regexp.MustCompile(`[^A-Za-z0-9_]+`)
 
 type Registration struct {
-	AgentSpecs   []tools.AgentToolSpec
-	LlmSpecs     []llm.ToolSpec
-	Executors    map[string]tools.Executor
-	Instructions map[string]string // serverID -> instructions from MCP InitializeResult
+	AgentSpecs      []tools.AgentToolSpec
+	LlmSpecs        []llm.ToolSpec
+	Executors       map[string]tools.Executor
+	UIOnlyExecutors map[string]tools.Executor
+	Instructions    map[string]string // serverID -> instructions from MCP InitializeResult
 }
 
 type DiscoverDiagnostics struct {
@@ -81,12 +83,21 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 		pool = NewPool()
 	}
 
+	serverIDs := make([]string, len(cfg.Servers))
+	for i, s := range cfg.Servers {
+		serverIDs[i] = strings.TrimSpace(s.ServerID)
+	}
+	slog.DebugContext(ctx, "mcp: DiscoverWithDiagnostics start",
+		"server_count", len(cfg.Servers),
+		"server_ids", serverIDs,
+	)
+
 	type serverResult struct {
-		index       int
-		server      ServerConfig
-		tools       []Tool
+		index        int
+		server       ServerConfig
+		tools        []Tool
 		instructions string
-		diag        ServerDiagnostics
+		diag         ServerDiagnostics
 	}
 
 	results := make([]serverResult, len(cfg.Servers))
@@ -96,35 +107,59 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 		go func(idx int, srv ServerConfig) {
 			defer wg.Done()
 			startedAt := time.Now()
+			srvID := strings.TrimSpace(srv.ServerID)
 			result := serverResult{
 				index:  idx,
 				server: srv,
 				diag: ServerDiagnostics{
-					ServerID:   strings.TrimSpace(srv.ServerID),
+					ServerID:   srvID,
 					Transport:  strings.TrimSpace(srv.Transport),
 					Outcome:    "borrow_failed",
 					ErrorClass: "",
 				},
 			}
+			slog.DebugContext(ctx, "mcp: discovering server", "server_id", srvID, "transport", srv.Transport)
+
 			client, meta, err := pool.BorrowWithMeta(ctx, srv)
 			if err != nil {
 				result.diag.DurationMs = time.Since(startedAt).Milliseconds()
 				result.diag.ErrorClass = classifyDiscoverError(err)
 				results[idx] = result
+				slog.DebugContext(ctx, "mcp: discover borrow failed",
+					"server_id", srvID,
+					"duration_ms", result.diag.DurationMs,
+					"error_class", result.diag.ErrorClass,
+					"error", err.Error(),
+				)
 				return
 			}
 			result.diag.ReusedClient = meta.Reused
+			slog.DebugContext(ctx, "mcp: discover borrow ok",
+				"server_id", srvID,
+				"reused", meta.Reused,
+			)
+
 			toolsList, err := client.ListTools(ctx, srv.CallTimeoutMs)
 			result.diag.DurationMs = time.Since(startedAt).Milliseconds()
 			if err != nil {
 				result.diag.Outcome = "list_failed"
 				result.diag.ErrorClass = classifyDiscoverError(err)
 				results[idx] = result
+				slog.DebugContext(ctx, "mcp: discover ListTools failed",
+					"server_id", srvID,
+					"duration_ms", result.diag.DurationMs,
+					"error_class", result.diag.ErrorClass,
+					"error", err.Error(),
+				)
 				return
 			}
 			if len(toolsList) == 0 {
 				result.diag.Outcome = "empty"
 				results[idx] = result
+				slog.DebugContext(ctx, "mcp: discover ListTools empty",
+					"server_id", srvID,
+					"duration_ms", result.diag.DurationMs,
+				)
 				return
 			}
 			result.tools = toolsList
@@ -132,6 +167,11 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 			result.diag.Outcome = "ok"
 			result.diag.ToolCount = len(toolsList)
 			results[idx] = result
+			slog.DebugContext(ctx, "mcp: discover ListTools ok",
+				"server_id", srvID,
+				"duration_ms", result.diag.DurationMs,
+				"tool_count", len(toolsList),
+			)
 		}(i, server)
 	}
 	wg.Wait()
@@ -176,12 +216,28 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 	agentSpecs := []tools.AgentToolSpec{}
 	llmSpecs := []llm.ToolSpec{}
 	executors := map[string]tools.Executor{}
+	uiOnlyExecutors := map[string]tools.Executor{}
 
 	for _, entry := range discoveredByServer {
 		server := entry.server
 		remoteMap := map[string]string{}
+		resourceURIs := map[string]string{}
+		uiOnlyRemoteMap := map[string]string{}
 
 		for _, tool := range entry.tools {
+			if !isToolVisibleToModel(tool) {
+				if isToolAppOnly(tool) {
+					base := mcpToolBaseName(server.ServerID, tool.Name)
+					internal := base
+					if baseCounts[base] > 1 {
+						raw := mcpToolRawName(server.ServerID, tool.Name)
+						internal = base + "__" + shortHash(raw)
+					}
+					internal = ensureUniqueToolName(internal, usedNames)
+					uiOnlyRemoteMap[internal] = tool.Name
+				}
+				continue
+			}
 			base := mcpToolBaseName(server.ServerID, tool.Name)
 			internal := base
 			if baseCounts[base] > 1 {
@@ -190,6 +246,10 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 			}
 			internal = ensureUniqueToolName(internal, usedNames)
 			remoteMap[internal] = tool.Name
+
+			if uri := extractToolResourceURI(tool); uri != "" {
+				resourceURIs[internal] = uri
+			}
 
 			description := ""
 			if tool.Description != nil && strings.TrimSpace(*tool.Description) != "" {
@@ -204,19 +264,29 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 				Name:        internal,
 				Version:     "1",
 				Description: description,
-				RiskLevel:   tools.RiskLevelHigh,
-				SideEffects: true,
+				RiskLevel:   mcpRiskLevel(tool.Annotations),
+				SideEffects: mcpSideEffects(tool.Annotations),
+				Annotations: tool.Annotations,
+				ResourceURI: resourceURIs[internal],
 			})
 			llmSpecs = append(llmSpecs, llm.ToolSpec{
 				Name:        internal,
 				Description: stringPtr(description),
 				JSONSchema:  tool.InputSchema,
+				Annotations: tool.Annotations,
 			})
 		}
 
-		executor := NewToolExecutor(server, remoteMap, pool)
+		executor := NewToolExecutor(server, remoteMap, resourceURIs, pool)
 		for internalName := range remoteMap {
 			executors[internalName] = executor
+		}
+
+		if len(uiOnlyRemoteMap) > 0 {
+			uiExecutor := NewToolExecutor(server, uiOnlyRemoteMap, nil, pool)
+			for internalName := range uiOnlyRemoteMap {
+				uiOnlyExecutors[internalName] = uiExecutor
+			}
 		}
 	}
 
@@ -224,11 +294,20 @@ func DiscoverWithDiagnostics(ctx context.Context, cfg Config, pool *Pool) (Regis
 	sort.Slice(llmSpecs, func(i, j int) bool { return llmSpecs[i].Name < llmSpecs[j].Name })
 	diag.ToolCount = len(llmSpecs)
 
+	slog.DebugContext(ctx, "mcp: DiscoverWithDiagnostics complete",
+		"server_count", diag.ServerCount,
+		"tool_count", diag.ToolCount,
+		"llm_spec_count", len(llmSpecs),
+		"agent_spec_count", len(agentSpecs),
+		"executor_count", len(executors),
+	)
+
 	return Registration{
-		AgentSpecs:   agentSpecs,
-		LlmSpecs:     llmSpecs,
-		Executors:    executors,
-		Instructions: instructions,
+		AgentSpecs:      agentSpecs,
+		LlmSpecs:        llmSpecs,
+		Executors:       executors,
+		UIOnlyExecutors: uiOnlyExecutors,
+		Instructions:    instructions,
 	}, diag, nil
 }
 
@@ -290,4 +369,79 @@ func stringPtr(value string) *string {
 		return nil
 	}
 	return &cleaned
+}
+
+func mcpRiskLevel(a *llm.ToolAnnotations) tools.RiskLevel {
+	if a == nil {
+		return tools.RiskLevelHigh
+	}
+	if a.ReadOnlyHint {
+		return tools.RiskLevelLow
+	}
+	if a.DestructiveHint != nil && *a.DestructiveHint {
+		return tools.RiskLevelHigh
+	}
+	return tools.RiskLevelMedium
+}
+
+func mcpSideEffects(a *llm.ToolAnnotations) bool {
+	if a == nil {
+		return true
+	}
+	return !a.ReadOnlyHint
+}
+
+func isToolVisibleToModel(tool Tool) bool {
+	if tool.Meta == nil {
+		return true
+	}
+	metaUI, _ := tool.Meta["ui"].(map[string]any)
+	if metaUI == nil {
+		return true
+	}
+	rawVisibility, ok := metaUI["visibility"].([]any)
+	if !ok || len(rawVisibility) == 0 {
+		return true
+	}
+	for _, v := range rawVisibility {
+		if strings.TrimSpace(asString(v)) == "model" {
+			return true
+		}
+	}
+	return false
+}
+
+func isToolAppOnly(tool Tool) bool {
+	if tool.Meta == nil {
+		return false
+	}
+	metaUI, _ := tool.Meta["ui"].(map[string]any)
+	if metaUI == nil {
+		return false
+	}
+	rawVisibility, ok := metaUI["visibility"].([]any)
+	if !ok || len(rawVisibility) == 0 {
+		return false
+	}
+	hasApp := false
+	for _, v := range rawVisibility {
+		if strings.TrimSpace(asString(v)) == "app" {
+			hasApp = true
+		}
+	}
+	return hasApp
+}
+
+func extractToolResourceURI(tool Tool) string {
+	if tool.Meta == nil {
+		return ""
+	}
+	metaUI, _ := tool.Meta["ui"].(map[string]any)
+	if metaUI != nil {
+		uri := strings.TrimSpace(asString(metaUI["resourceUri"]))
+		if uri != "" {
+			return uri
+		}
+	}
+	return strings.TrimSpace(asString(tool.Meta["ui/resourceUri"]))
 }

@@ -56,8 +56,10 @@ import {
   buildMessageFileOpsFromAgentEvents,
   buildMessageWebFetchesFromAgentEvents,
   buildMessageThinkingFromAgentEvents,
+  buildMessageResourcesFromAgentEvents,
   buildTodosFromAgentEvents,
 } from '../agentEventProcessing'
+import { readMessageResources, type McpAppResource } from '../storage'
 import { getThreadTodos, setThreadTodos, clearThreadTodos, type TodoItem } from '../todoDb'
 import {
   buildAssistantTurnFromAgentEvents,
@@ -137,6 +139,7 @@ import {
   writeMessageSources,
   readMessageArtifacts,
   writeMessageArtifacts,
+  writeMessageResources,
   readMessageCodeExecutions,
   writeMessageCodeExecutions,
   readMessageBrowserActions,
@@ -231,6 +234,7 @@ function resourceTabId(resource: ResourceRef): string {
   if (resource.kind === 'artifact') return `resource:artifact:${resource.key}`
   if (resource.kind === 'browser') return `resource:browser:${resource.url}`
   if (resource.kind === 'local-file') return `resource:local:${resource.rootPath}:${resource.path}`
+  if (resource.kind === 'mcp-app') return `resource:mcp-app:${resource.uri}`
   return `resource:workspace:${resource.projectId ?? resource.runId ?? ''}:${resource.path}`
 }
 
@@ -1034,6 +1038,7 @@ export const ChatView = memo(function ChatView() {
     clearAll: clearAllMeta,
     currentRunSourcesRef,
     currentRunArtifactsRef,
+    currentRunResourcesRef,
     currentRunCodeExecutionsRef,
     currentRunBrowserActionsRef,
     currentRunSubAgentsRef,
@@ -1320,6 +1325,7 @@ export const ChatView = memo(function ChatView() {
         // 加载各消息缓存的 web 来源
         const sourcesMap = new Map<string, WebSource[]>()
         const artifactsMap = new Map<string, ArtifactRef[]>()
+        const resourcesMap = new Map<string, McpAppResource[]>()
         const widgetsMap = new Map<string, WidgetRef[]>()
         const codeExecMap = new Map<string, CodeExecutionRef[]>()
         const browserActionsMap = new Map<string, BrowserActionRef[]>()
@@ -1341,6 +1347,8 @@ export const ChatView = memo(function ChatView() {
           if (cached) sourcesMap.set(msg.id, cached)
           const cachedArt = readMessageArtifacts(msg.id)
           if (cachedArt) artifactsMap.set(msg.id, cachedArt)
+          const cachedResources = readMessageResources(msg.id)
+          if (cachedResources) resourcesMap.set(msg.id, cachedResources)
           const cachedWidgets = readMessageWidgets(msg.id)
           if (cachedWidgets) widgetsMap.set(msg.id, cachedWidgets)
           const cachedExec = readMessageCodeExecutions(msg.id)
@@ -1463,6 +1471,14 @@ export const ChatView = memo(function ChatView() {
                 writeMessageArtifacts(lastAssistant.id, replayArtifacts)
               }
             }
+            const replayResources = buildMessageResourcesFromAgentEvents(replayEvents)
+            currentRunResourcesRef.current = replayResources
+            if (lastAssistant && !resourcesMap.has(lastAssistant.id)) {
+              if (replayResources.length > 0) {
+                resourcesMap.set(lastAssistant.id, replayResources)
+                writeMessageResources(lastAssistant.id, replayResources)
+              }
+            }
             if (lastAssistant && replayWidgetsNeeded) {
               if (replayWidgets.length > 0) {
                 widgetsMap.set(lastAssistant.id, replayWidgets)
@@ -1542,6 +1558,7 @@ export const ChatView = memo(function ChatView() {
                 assistantTurn: replayTurn.segments.length > 0 ? replayTurn : null,
                 sources: replaySearchSteps.flatMap((step) => step.sources ?? []),
                 artifacts: replayArtifacts,
+                resources: replayResources,
                 widgets: replayWidgets,
                 codeExecutions: replayExecs,
                 browserActions: replayBrowserActions,
@@ -1574,6 +1591,7 @@ export const ChatView = memo(function ChatView() {
         }
         sourcesMap.forEach((sources, id) => mergeMeta(id, { sources }))
         artifactsMap.forEach((artifacts, id) => mergeMeta(id, { artifacts }))
+        resourcesMap.forEach((resources, id) => mergeMeta(id, { resources }))
         widgetsMap.forEach((widgets, id) => mergeMeta(id, { widgets }))
         codeExecMap.forEach((codeExecutions, id) => mergeMeta(id, { codeExecutions }))
         browserActionsMap.forEach((browserActions, id) => mergeMeta(id, { browserActions }))
@@ -1630,6 +1648,7 @@ export const ChatView = memo(function ChatView() {
           activeSegmentIdRef.current = null
           currentRunSourcesRef.current = [...handoff.sources]
           currentRunArtifactsRef.current = [...handoff.artifacts]
+          currentRunResourcesRef.current = [...(handoff.resources ?? [])]
           currentRunCodeExecutionsRef.current = [...handoff.codeExecutions]
           currentRunBrowserActionsRef.current = [...handoff.browserActions]
           currentRunSubAgentsRef.current = [...handoff.subAgents]
@@ -1806,6 +1825,7 @@ export const ChatView = memo(function ChatView() {
     queuedEditPreviousDraftRef.current = ''
     currentRunSourcesRef.current = []
     currentRunArtifactsRef.current = []
+    currentRunResourcesRef.current = []
     currentRunCodeExecutionsRef.current = []
     currentRunBrowserActionsRef.current = []
     currentRunSubAgentsRef.current = []
@@ -1846,6 +1866,7 @@ export const ChatView = memo(function ChatView() {
       setPreserveLiveRunUi(false)
       currentRunSourcesRef.current = []
       currentRunArtifactsRef.current = []
+      currentRunResourcesRef.current = []
       currentRunCodeExecutionsRef.current = []
       currentRunBrowserActionsRef.current = []
       currentRunSubAgentsRef.current = []
@@ -2893,6 +2914,7 @@ export const ChatView = memo(function ChatView() {
           onClose={() => closeRightPanelTab(tab.id)}
           onBuildPlan={handleBuildPlan}
           onOpenModelSettings={() => onOpenSettings('models')}
+          onSendMessage={sendMessage}
           onPlanTitleChange={(title) => {
             setRightPanelTabs((current) => {
               const target = current.find((item) => item.id === tab.id && item.kind === 'resource')
@@ -2905,7 +2927,7 @@ export const ChatView = memo(function ChatView() {
         />
       ),
     }
-  }, [accessToken, closeRightPanelTab, handleBuildPlan, onOpenSettings, resolvedMessageSources, upsertRightPanelTab, workPanelFolder])
+  }, [accessToken, closeRightPanelTab, handleBuildPlan, onOpenSettings, resolvedMessageSources, sendMessage, upsertRightPanelTab, workPanelFolder])
 
   const handleWebPanelResourceChange = useCallback((resource: ResourceRef) => {
     if (resource.kind !== 'browser') return
@@ -3676,6 +3698,7 @@ export const ChatView = memo(function ChatView() {
                 handleArtifactAction={handleArtifactAction}
                 handleAskUserFormSubmit={handleAskUserFormSubmit}
                 handleAskUserFormDismiss={handleAskUserFormDismiss}
+                onSendMessage={sendMessage}
                 openDocumentPanel={openDocumentPanel}
                 openResourcePanel={openResourcePanel}
                 openCodePanel={openCodePanel}
@@ -3703,6 +3726,7 @@ export const ChatView = memo(function ChatView() {
     handleFork,
     handleRetryUserMessage,
     handleScrollContainerScroll,
+    sendMessage,
     isWorkMode,
     lastTurnChildren,
     lastTurnStartIdx,

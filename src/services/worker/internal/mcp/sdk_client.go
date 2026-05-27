@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	sharedmcpinstall "arkloop/services/shared/mcpinstall"
 	sharedmcpoauth "arkloop/services/shared/mcpoauth"
+	"arkloop/services/worker/internal/llm"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -25,7 +27,15 @@ type sdkClient struct {
 
 func newSDKClient(ctx context.Context, server sharedmcpinstall.ServerConfig, authStore AuthStore) (*sdkClient, error) {
 	impl := &sdkmcp.Implementation{Name: "arkloop", Version: "0"}
-	client := sdkmcp.NewClient(impl, nil)
+	client := sdkmcp.NewClient(impl, &sdkmcp.ClientOptions{
+		Capabilities: &sdkmcp.ClientCapabilities{
+			Extensions: map[string]any{
+				"io.modelcontextprotocol/ui": map[string]any{
+					"mimeTypes": []string{"text/html;profile=mcp-app"},
+				},
+			},
+		},
+	})
 
 	var transport sdkmcp.Transport
 	switch server.Transport {
@@ -58,7 +68,11 @@ func newSDKClient(ctx context.Context, server sharedmcpinstall.ServerConfig, aut
 }
 
 func (c *sdkClient) ListTools(ctx context.Context, timeoutMs int) ([]Tool, error) {
+	serverID := strings.TrimSpace(c.server.ServerID)
+	slog.DebugContext(ctx, "mcp: ListTools start", "server_id", serverID, "timeout_ms", timeoutMs)
+
 	if c.closed.Load() {
+		slog.DebugContext(ctx, "mcp: ListTools aborted, client closed", "server_id", serverID)
 		return nil, DisconnectedError{Message: "MCP client closed"}
 	}
 
@@ -68,6 +82,7 @@ func (c *sdkClient) ListTools(ctx context.Context, timeoutMs int) ([]Tool, error
 	var out []Tool
 	for tool, err := range c.session.Tools(ctx, nil) {
 		if err != nil {
+			slog.DebugContext(ctx, "mcp: ListTools error from session.Tools", "server_id", serverID, "error", err.Error())
 			return nil, classifySDKError(err)
 		}
 		if tool == nil {
@@ -75,6 +90,7 @@ func (c *sdkClient) ListTools(ctx context.Context, timeoutMs int) ([]Tool, error
 		}
 		name := strings.TrimSpace(tool.Name)
 		if name == "" {
+			slog.DebugContext(ctx, "mcp: ListTools skipped tool with empty name", "server_id", serverID)
 			continue
 		}
 		schema := map[string]any{}
@@ -86,16 +102,36 @@ func (c *sdkClient) ListTools(ctx context.Context, timeoutMs int) ([]Tool, error
 			Title:       stringPtr(tool.Title),
 			Description: stringPtr(tool.Description),
 			InputSchema: schema,
+			Meta:        tool.GetMeta(),
+			Annotations: convertAnnotations(tool.Annotations),
 		})
 	}
 	if out == nil {
 		out = []Tool{}
 	}
+
+	toolNames := make([]string, len(out))
+	for i, t := range out {
+		toolNames[i] = t.Name
+	}
+	slog.DebugContext(ctx, "mcp: ListTools complete",
+		"server_id", serverID,
+		"tool_count", len(out),
+		"tool_names", toolNames,
+	)
 	return out, nil
 }
 
 func (c *sdkClient) CallTool(ctx context.Context, name string, arguments map[string]any, timeoutMs int) (ToolCallResult, error) {
+	serverID := strings.TrimSpace(c.server.ServerID)
+	slog.DebugContext(ctx, "mcp: CallTool start",
+		"server_id", serverID,
+		"tool_name", name,
+		"timeout_ms", timeoutMs,
+	)
+
 	if c.closed.Load() {
+		slog.DebugContext(ctx, "mcp: CallTool aborted, client closed", "server_id", serverID, "tool_name", name)
 		return ToolCallResult{}, DisconnectedError{Message: "MCP client closed"}
 	}
 
@@ -107,6 +143,11 @@ func (c *sdkClient) CallTool(ctx context.Context, name string, arguments map[str
 		Arguments: arguments,
 	})
 	if err != nil {
+		slog.DebugContext(ctx, "mcp: CallTool error",
+			"server_id", serverID,
+			"tool_name", name,
+			"error", err.Error(),
+		)
 		return ToolCallResult{}, classifySDKError(err)
 	}
 
@@ -126,9 +167,107 @@ func (c *sdkClient) CallTool(ctx context.Context, name string, arguments map[str
 		isError = result.IsError
 	}
 
+	slog.DebugContext(ctx, "mcp: CallTool complete",
+		"server_id", serverID,
+		"tool_name", name,
+		"content_count", len(content),
+		"is_error", isError,
+	)
 	return ToolCallResult{
 		Content: content,
 		IsError: isError,
+	}, nil
+}
+
+func (c *sdkClient) ListResources(ctx context.Context, timeoutMs int) ([]Resource, error) {
+	if c.closed.Load() {
+		return nil, DisconnectedError{Message: "MCP client closed"}
+	}
+
+	ctx, cancel := applyTimeout(ctx, timeoutMs)
+	defer cancel()
+
+	var out []Resource
+	for res, err := range c.session.Resources(ctx, nil) {
+		if err != nil {
+			return nil, classifySDKError(err)
+		}
+		if res == nil {
+			continue
+		}
+		uri := strings.TrimSpace(res.URI)
+		if uri == "" {
+			continue
+		}
+		annotations := map[string]any{}
+		if res.Annotations != nil {
+			annotations["audience"] = res.Annotations.Audience
+			annotations["priority"] = res.Annotations.Priority
+			if res.Annotations.LastModified != "" {
+				annotations["lastModified"] = res.Annotations.LastModified
+			}
+		}
+		out = append(out, Resource{
+			URI:         uri,
+			Name:        strings.TrimSpace(res.Name),
+			MimeType:    strings.TrimSpace(res.MIMEType),
+			Annotations: annotations,
+			Meta:        coerceToMap(res.GetMeta()),
+		})
+	}
+	if out == nil {
+		out = []Resource{}
+	}
+	return out, nil
+}
+
+func (c *sdkClient) ReadResource(ctx context.Context, uri string, timeoutMs int) (ResourceContent, error) {
+	serverID := strings.TrimSpace(c.server.ServerID)
+	slog.DebugContext(ctx, "mcp: ReadResource start",
+		"server_id", serverID,
+		"uri", uri,
+		"timeout_ms", timeoutMs,
+	)
+
+	if c.closed.Load() {
+		slog.DebugContext(ctx, "mcp: ReadResource aborted, client closed", "server_id", serverID, "uri", uri)
+		return ResourceContent{}, DisconnectedError{Message: "MCP client closed"}
+	}
+
+	ctx, cancel := applyTimeout(ctx, timeoutMs)
+	defer cancel()
+
+	result, err := c.session.ReadResource(ctx, &sdkmcp.ReadResourceParams{
+		URI: uri,
+	})
+	if err != nil {
+		slog.DebugContext(ctx, "mcp: ReadResource error",
+			"server_id", serverID,
+			"uri", uri,
+			"error", err.Error(),
+		)
+		return ResourceContent{}, classifySDKError(err)
+	}
+
+	if result == nil || len(result.Contents) == 0 {
+		slog.DebugContext(ctx, "mcp: ReadResource empty contents", "server_id", serverID, "uri", uri)
+		return ResourceContent{}, ProtocolError{Message: "resources/read returned empty contents"}
+	}
+
+	content := result.Contents[0]
+	slog.DebugContext(ctx, "mcp: ReadResource complete",
+		"server_id", serverID,
+		"uri", uri,
+		"mime_type", strings.TrimSpace(content.MIMEType),
+		"text_len", len(content.Text),
+		"blob_len", len(content.Blob),
+	)
+	return ResourceContent{
+		URI:      strings.TrimSpace(content.URI),
+		MimeType: strings.TrimSpace(content.MIMEType),
+		Text:     content.Text,
+		Blob:     content.Blob,
+		Meta:     coerceToMap(content.Meta.GetMeta()),
 	}, nil
 }
 
@@ -246,6 +385,19 @@ func persistOAuthRefresh(ctx context.Context, store AuthStore, server sharedmcpi
 		Env:     cloneStringMap(server.Env),
 		OAuth:   updated,
 	})
+}
+
+func convertAnnotations(a *sdkmcp.ToolAnnotations) *llm.ToolAnnotations {
+	if a == nil {
+		return nil
+	}
+	return &llm.ToolAnnotations{
+		DestructiveHint: a.DestructiveHint,
+		IdempotentHint:  a.IdempotentHint,
+		OpenWorldHint:   a.OpenWorldHint,
+		ReadOnlyHint:    a.ReadOnlyHint,
+		Title:           a.Title,
+	}
 }
 
 func coerceToMap(v any) map[string]any {

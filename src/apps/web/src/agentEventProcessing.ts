@@ -6,7 +6,7 @@ import {
   agentEventToolInput,
   agentEventToolOutput,
 } from './agent-ui/event-data'
-import type { ArtifactRef, BrowserActionRef, CodeExecutionRef, FileOpRef, MessageThinkingRef, SubAgentRef, WebFetchRef, WidgetRef } from './storage'
+import type { ArtifactRef, BrowserActionRef, CodeExecutionRef, FileOpRef, McpAppCsp, McpAppResource, MessageThinkingRef, SubAgentRef, WebFetchRef, WidgetRef } from './storage'
 import { basename, presentationForTool, truncate } from './toolPresentation'
 import { contentText } from './timelineText'
 import { FILE_OP_TOOL_NAMES } from './copSubSegment'
@@ -89,6 +89,70 @@ export function buildMessageArtifactsFromAgentEvents(events: AgentUIEvent[]): Ar
     }
   }
   return artifacts
+}
+
+export function extractResources(source: unknown): McpAppResource[] {
+  if (!source || typeof source !== 'object') return []
+  const s = source as Record<string, unknown>
+
+  let result: Record<string, unknown> | undefined
+  const nested = s.result ?? s.output
+  if (nested && typeof nested === 'object') {
+    result = nested as Record<string, unknown>
+  } else {
+    result = s
+  }
+
+  const rawResources = result.resources
+  if (!Array.isArray(rawResources)) return []
+
+  const refs: McpAppResource[] = []
+  for (const r of rawResources) {
+    if (!r || typeof r !== 'object') continue
+    const item = r as Record<string, unknown>
+    const key = typeof item.key === 'string' ? item.key : ''
+    if (!key) continue
+    let csp: McpAppCsp | undefined
+    if (item.csp && typeof item.csp === 'object') {
+      const raw = item.csp as Record<string, unknown>
+      const arr = (k: string): string[] | undefined => {
+        const v = raw[k]
+        return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined
+      }
+      csp = {
+        connectDomains: arr('connectDomains'),
+        resourceDomains: arr('resourceDomains'),
+        frameDomains: arr('frameDomains'),
+        baseUriDomains: arr('baseUriDomains'),
+      }
+    }
+    refs.push({
+      key,
+      uri: typeof item.uri === 'string' ? item.uri : '',
+      filename: typeof item.filename === 'string' ? item.filename : 'mcp-app.html',
+      mimeType: typeof item.mime_type === 'string' ? item.mime_type : '',
+      size: typeof item.size === 'number' ? item.size : 0,
+      content: typeof item.content === 'string' ? item.content : undefined,
+      initialData: item.initialData ?? result,
+      csp,
+      serverId: typeof item.server_id === 'string' ? item.server_id : undefined,
+    })
+  }
+  return refs
+}
+
+export function buildMessageResourcesFromAgentEvents(events: AgentUIEvent[]): McpAppResource[] {
+  const resources: McpAppResource[] = []
+  const seen = new Set<string>()
+  for (const event of events) {
+    if (event.type !== 'tool-result') continue
+    for (const resource of extractResources(agentEventToolOutput(event.data))) {
+      if (seen.has(resource.key)) continue
+      seen.add(resource.key)
+      resources.push(resource)
+    }
+  }
+  return resources
 }
 
 export function isWebFetchToolName(toolName: string): boolean {
