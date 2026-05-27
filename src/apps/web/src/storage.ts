@@ -689,6 +689,9 @@ export type McpAppResource = {
   content?: string
   csp?: McpAppCsp
   serverId?: string
+  toolName?: string
+  toolInput?: Record<string, unknown>
+  displayMode?: 'inline' | 'fullscreen'
 }
 
 function messageArtifactsKey(messageId: string): string {

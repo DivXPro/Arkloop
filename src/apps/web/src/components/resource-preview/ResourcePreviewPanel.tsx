@@ -268,6 +268,9 @@ export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({
             serverId={resource.serverId}
             accessToken={accessToken}
             onSendMessage={onSendMessage}
+            toolName={resource.toolName}
+            toolInput={resource.toolInput}
+            displayMode="fullscreen"
             hideHeader
             noBorder
             style={{ width: '100%', height: '100%', minHeight: '400px' }}

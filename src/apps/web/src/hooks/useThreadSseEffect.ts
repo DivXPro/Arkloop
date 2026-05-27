@@ -150,6 +150,7 @@ export function useThreadSseEffect({
     setTopLevelFileOps,
     setTopLevelWebFetches,
     setWorkTodos,
+    cancelledToolCallIdsRef,
   } = useStream()
   const {
     refreshMessages,
@@ -190,6 +191,7 @@ export function useThreadSseEffect({
   const contextCompactHideTimerRef = useRef<number | null>(null)
   const liveSegmentSnapshotIdsRef = useRef(new Set<string>())
   const drainSseEventsRef = useRef<() => void>(() => {})
+  const toolCallInfoRef = useRef<Map<string, { toolName: string; toolInput: Record<string, unknown> }>>(new Map())
   const clearContextCompactHideTimer = useCallback(() => {
     if (contextCompactHideTimerRef.current != null) {
       clearTimeout(contextCompactHideTimerRef.current)
@@ -297,6 +299,7 @@ export function useThreadSseEffect({
         currentRunSubAgentsRef.current = []
         currentRunFileOpsRef.current = []
         currentRunWebFetchesRef.current = []
+        toolCallInfoRef.current.clear()
       }
       if (!options?.preserveSearchSteps) {
         resetSearchSteps()
@@ -531,6 +534,13 @@ export function useThreadSseEffect({
         seenFirstToolCallInRunRef.current = true
         const obj = agentEventDataRecord(event.data) ?? {}
         const toolName = pickLogicalToolName(event.data, event.toolName)
+        const toolCallId = typeof obj?.toolCallId === 'string' ? obj.toolCallId : event.id
+        if (toolCallId) {
+          toolCallInfoRef.current.set(toolCallId, {
+            toolName,
+            toolInput: agentEventToolInput(event.data) ?? {},
+          })
+        }
         const codeExecutionCall = applyCodeExecutionToolCall(currentRunCodeExecutionsRef.current, event)
         if (codeExecutionCall.appended) {
           const entry = codeExecutionCall.appended
@@ -683,7 +693,13 @@ export function useThreadSseEffect({
             setLiveGeneratedImages(nextImages)
           }
         }
-        const newResources = extractResources(result)
+        const resultToolCallId = typeof obj?.toolCallId === 'string' ? obj.toolCallId : event.id
+        const toolInfo = resultToolCallId ? toolCallInfoRef.current.get(resultToolCallId) : undefined
+        const newResources = extractResources(
+          result,
+          toolInfo?.toolName,
+          toolInfo?.toolInput,
+        )
         if (newResources.length > 0) {
           currentRunResourcesRef.current = [...currentRunResourcesRef.current, ...newResources]
         }
@@ -917,6 +933,9 @@ export function useThreadSseEffect({
       if (event.type === 'run-cancelled') {
         const blockedByInjection = injectionBlockedRunIdRef.current === event.streamId
         const runId = event.streamId
+        for (const id of toolCallInfoRef.current.keys()) {
+          cancelledToolCallIdsRef.current.add(id)
+        }
         setTerminalRunDisplayId(runId)
         setTerminalRunHandoffStatus('cancelled')
         const runSearchSteps = finalizeSearchSteps(searchStepsRef.current)
@@ -974,6 +993,9 @@ export function useThreadSseEffect({
 
       if (event.type === 'run-failed') {
         const runId = event.streamId
+        for (const id of toolCallInfoRef.current.keys()) {
+          cancelledToolCallIdsRef.current.add(id)
+        }
         setTerminalRunDisplayId(runId)
         setTerminalRunHandoffStatus('failed')
         const agentEventsForMessage = runId
@@ -1038,6 +1060,9 @@ export function useThreadSseEffect({
 
       if (event.type === 'run-interrupted') {
         const runId = event.streamId
+        for (const id of toolCallInfoRef.current.keys()) {
+          cancelledToolCallIdsRef.current.add(id)
+        }
         setTerminalRunDisplayId(runId)
         setTerminalRunHandoffStatus('interrupted')
         const agentEventsForMessage = runId
