@@ -513,6 +513,8 @@ export const zh: LocaleStrings = {
   sharePagePasswordWrong: "密码错误",
   sharePageNotFound: "分享链接无效或已过期",
   sharePagePoweredBy: "Powered by Arkloop",
+  replayRestart: "重新播放",
+  replayButton: "播放回放",
   reportButton: "举报",
   reportTitle: "举报此对话",
   reportSubtitle: "请选择举报原因（可多选）",

@@ -504,6 +504,8 @@ export interface LocaleStrings {
   sharePagePasswordWrong: string
   sharePageNotFound: string
   sharePagePoweredBy: string
+  replayRestart: string
+  replayButton: string
   // report
   reportButton: string
   reportTitle: string
