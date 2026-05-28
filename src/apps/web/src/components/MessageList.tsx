@@ -431,7 +431,7 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
                 sources: resolvedSources ?? [],
               }
 
-              const renderSegment = (seg: AssistantTurnSegment, si: number, segments: AssistantTurnSegment[], isLive: boolean) => {
+              const renderSegment = (seg: AssistantTurnSegment, si: number, segments: AssistantTurnSegment[], isLive: boolean, opts?: { suppressWidgets?: boolean }) => {
                 if (seg.type === 'text') {
                   return (
                     <MarkdownRenderer
@@ -459,7 +459,7 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
                     ? copTimelinePayloadForSegment(entry, timelinePools).todoWrites ?? []
                     : [])
                 const payload = precomputed?.payloads.get(String(si)) ?? copTimelinePayloadForSegment(seg, timelinePools)
-                const histWidgets = precomputed?.histWidgetsMap.get(String(si)) ?? historicWidgetsForCop(seg, msgWidgetsRaw)
+                const histWidgets = opts?.suppressWidgets ? [] : (precomputed?.histWidgetsMap.get(String(si)) ?? historicWidgetsForCop(seg, msgWidgetsRaw))
 
                 const timelineTitleOverride = displayTerminalStatus != null
                   ? currentRunCopHeaderOverride({
@@ -513,14 +513,30 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
                 )
               }
 
+              const workGroupWidgets = workGroupSplit.workGroup != null
+                ? workGroupSplit.workGroup.segments
+                    .filter((seg): seg is AssistantTurnSegment & { type: 'cop' } => seg.type === 'cop')
+                    .flatMap((seg) => historicWidgetsForCop(seg, msgWidgetsRaw))
+                : []
+
               if (workGroupSplit.workGroup != null) {
                 return (
                   <>
                     <WorkGroup durationMs={durationMs}>
                       {workGroupSplit.workGroup.segments.map((seg, si) =>
-                        renderSegment(seg, si, workGroupSplit.workGroup!.segments, false)
+                        renderSegment(seg, si, workGroupSplit.workGroup!.segments, false, { suppressWidgets: true })
                       )}
                     </WorkGroup>
+                    {workGroupWidgets.map((w) => (
+                      <WidgetBlock
+                        key={w.id}
+                        html={w.html}
+                        title={w.title}
+                        complete
+                        compact
+                        onAction={handleArtifactAction}
+                      />
+                    ))}
                     {workGroupSplit.finalText != null && (
                       <MarkdownRenderer
                         key={`${msg.id}-final`}
