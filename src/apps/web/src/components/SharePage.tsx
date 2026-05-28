@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Lock, Play } from 'lucide-react'
+import { Lock } from 'lucide-react'
 import { MessageBubble } from './MessageBubble'
 import { getSharedThread, verifySharePassword, isApiError, type SharedThreadResponse } from '../api'
 import { useLocale } from '../contexts/LocaleContext'
@@ -250,19 +250,6 @@ export function SharePage() {
           {messages.length === 0 && (
             <div className="py-20 text-center text-sm" style={{ color: 'var(--c-text-muted)' }}>
               {t.sharePageNotFound}
-            </div>
-          )}
-
-          {messages.length > 0 && (
-            <div className="flex justify-center pt-6">
-              <button
-                onClick={() => navigate(`/replay/${token}`)}
-                className="flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-medium transition-colors hover:opacity-90"
-                style={{ background: 'var(--c-brand)', color: '#fff' }}
-              >
-                <Play size={16} fill="currentColor" />
-                {t.replayButton}
-              </button>
             </div>
           )}
         </div>

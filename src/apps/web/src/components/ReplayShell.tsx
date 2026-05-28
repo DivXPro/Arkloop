@@ -8,12 +8,11 @@ import { ChatSkeleton } from './ChatSkeleton'
 import { useLocale } from '../contexts/LocaleContext'
 
 interface ReplayShellProps {
-  token: string
   threadTitle: string | null
   messages: AgentMessage[]
 }
 
-export function ReplayShell({ token, threadTitle, messages }: ReplayShellProps) {
+export function ReplayShell({ threadTitle, messages }: ReplayShellProps) {
   const navigate = useNavigate()
   const { t } = useLocale()
   const { visibleMessages, isComplete } = useReplayEngine(messages)
@@ -25,8 +24,8 @@ export function ReplayShell({ token, threadTitle, messages }: ReplayShellProps) 
   }, [])
 
   const handleBack = useCallback(() => {
-    navigate(`/s/${token}`)
-  }, [navigate, token])
+    navigate('/')
+  }, [navigate])
 
   if (messages.length === 0) {
     return (

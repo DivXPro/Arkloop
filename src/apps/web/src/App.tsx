@@ -10,6 +10,7 @@ import { ThreadListProvider } from './contexts/thread-list'
 import { AppUIProvider } from './contexts/app-ui'
 import { CreditsProvider } from './contexts/credits'
 import { SharePage } from './components/SharePage'
+import { ReplayPage } from './components/ReplayPage'
 import { VerifyEmailPage } from './components/VerifyEmailPage'
 import { OnboardingWizard } from './components/OnboardingWizard'
 import { HeadlessSetupPage } from './components/HeadlessSetupPage'
@@ -370,6 +371,7 @@ function App() {
       <Route path="/setup" element={<HeadlessSetupPage onLoggedIn={handleLoggedIn} />} />
       <Route path="/verify" element={<VerifyEmailPage />} />
       <Route path="/s/:token" element={<SharePage />} />
+      <Route path="/replay/:replayId" element={<ReplayPage />} />
       {!authChecked ? (
         <Route path="*" element={<LoadingPage label={t.loading} />} />
       ) : !accessToken ? (
