@@ -20,6 +20,7 @@ import (
 	"arkloop/services/shared/objectstore"
 	"arkloop/services/shared/onebotclient"
 	"arkloop/services/shared/pgnotify"
+	"arkloop/services/shared/threadrunstate"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -575,10 +576,19 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 			"channel_id", ch.ID, "run_id", dispatchResult.RunID, "thread_id", dispatchResult.ThreadID,
 		)
 		c.notifyInput(ctx, dispatchResult.RunID)
+		if dispatchResult.ThreadID != uuid.Nil {
+			threadrunstate.Publish(ctx, c.pool, nil, nil, ch.AccountID, dispatchResult.ThreadID)
+		}
 		return nil
 	}
 	if dispatchResult.FinalState == inboundStateThrottledNoRun || dispatchResult.FinalState == inboundStatePassivePersisted {
-		return commitTx()
+		if err := commitTx(); err != nil {
+			return err
+		}
+		if dispatchResult.ThreadID != uuid.Nil {
+			threadrunstate.Publish(ctx, c.pool, nil, nil, ch.AccountID, dispatchResult.ThreadID)
+		}
+		return nil
 	}
 
 	slog.InfoContext(ctx, "qq_inbound_processed",
@@ -586,7 +596,13 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 		"channel_id", ch.ID, "run_id", dispatchResult.RunID, "thread_id", dispatchResult.ThreadID,
 	)
 
-	return commitTx()
+	if err := commitTx(); err != nil {
+		return err
+	}
+	if dispatchResult.ThreadID != uuid.Nil {
+		threadrunstate.Publish(ctx, c.pool, nil, nil, ch.AccountID, dispatchResult.ThreadID)
+	}
+	return nil
 }
 
 // --- reply detection ---

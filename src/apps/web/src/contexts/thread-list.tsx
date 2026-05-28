@@ -11,6 +11,7 @@ import {
 import { silentRefresh } from '@arkloop/shared'
 import { getDesktopApi, isDesktop, isLocalMode } from '@arkloop/shared/desktop'
 import {
+  getThread,
   isApiError,
   listMessages,
   listThreads,
@@ -441,6 +442,18 @@ export function ThreadListProvider({ children }: { children: ReactNode }) {
           signal: controller.signal,
           onEvent: (event) => {
             if (stopped) return
+            // SSE事件携带的thread不在本地列表时，拉取详情插入
+            if (!threadsRef.current.some((t) => t.id === event.thread_id)) {
+              getThread(streamAccessToken, event.thread_id)
+                .then((thread) => {
+                  if (stopped) return
+                  setThreads((prev) => {
+                    if (prev.some((t) => t.id === thread.id)) return prev
+                    return [thread, ...prev]
+                  })
+                })
+                .catch(() => {})
+            }
             applyThreadState(event.thread_id, event.active_run_id, event.title)
           },
         })

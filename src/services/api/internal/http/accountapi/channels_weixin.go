@@ -12,6 +12,7 @@ import (
 	"arkloop/services/api/internal/data"
 	"arkloop/services/shared/messagecontent"
 	"arkloop/services/shared/pgnotify"
+	"arkloop/services/shared/threadrunstate"
 	"arkloop/services/shared/weixinclient"
 
 	"github.com/google/uuid"
@@ -302,7 +303,13 @@ func (c *weixinConnector) HandleWeChatMessage(ctx context.Context, traceID strin
 		return err
 	}
 	if !accepted {
-		return commitTx()
+		if err := commitTx(); err != nil {
+			return err
+		}
+		if dispatchResult.ThreadID != uuid.Nil {
+			threadrunstate.Publish(ctx, c.pool, nil, nil, ch.AccountID, dispatchResult.ThreadID)
+		}
+		return nil
 	}
 	if dispatchResult.Delivered {
 		slog.InfoContext(ctx, "weixin_inbound_processed",
@@ -311,7 +318,13 @@ func (c *weixinConnector) HandleWeChatMessage(ctx context.Context, traceID strin
 		)
 		c.notifyInput(ctx, dispatchResult.RunID)
 	}
-	return commitTx()
+	if err := commitTx(); err != nil {
+		return err
+	}
+	if dispatchResult.ThreadID != uuid.Nil {
+		threadrunstate.Publish(ctx, c.pool, nil, nil, ch.AccountID, dispatchResult.ThreadID)
+	}
+	return nil
 }
 
 func (c *weixinConnector) currentWeixinChannel(ctx context.Context, ch data.Channel) (data.Channel, bool, error) {

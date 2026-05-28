@@ -25,6 +25,7 @@ import (
 	"arkloop/services/shared/feishuclient"
 	"arkloop/services/shared/messagecontent"
 	"arkloop/services/shared/pgnotify"
+	"arkloop/services/shared/threadrunstate"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -1082,12 +1083,24 @@ func (c *feishuConnector) HandleIncoming(ctx context.Context, traceID string, ch
 		return err
 	}
 	if !accepted {
-		return commitTx()
+		if err := commitTx(); err != nil {
+			return err
+		}
+		if dispatchResult.ThreadID != uuid.Nil {
+			threadrunstate.Publish(ctx, c.pool, nil, nil, ch.AccountID, dispatchResult.ThreadID)
+		}
+		return nil
 	}
 	if dispatchResult.Delivered {
 		c.notifyInput(ctx, dispatchResult.RunID)
 	}
-	return commitTx()
+	if err := commitTx(); err != nil {
+		return err
+	}
+	if dispatchResult.ThreadID != uuid.Nil {
+		threadrunstate.Publish(ctx, c.pool, nil, nil, ch.AccountID, dispatchResult.ThreadID)
+	}
+	return nil
 }
 
 func (c *feishuConnector) updateFeishuInboundLedger(

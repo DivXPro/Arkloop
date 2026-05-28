@@ -14,6 +14,7 @@ import (
 	"arkloop/services/api/internal/observability"
 	"arkloop/services/shared/pgnotify"
 	"arkloop/services/shared/telegrambot"
+	"arkloop/services/shared/threadrunstate"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -388,6 +389,7 @@ createRun:
 	if err := commitTx(); err != nil {
 		return nil, err
 	}
+	threadrunstate.Publish(ctx, c.pool, nil, nil, ch.AccountID, threadID)
 	return &telegramInboundStageAResult{finalState: inboundStatePendingDispatch}, nil
 }
 
@@ -467,6 +469,9 @@ func (c telegramConnector) continueTelegramInboundDispatch(
 		if err := tx.Commit(ctx); err != nil {
 			return err
 		}
+		if *entry.ThreadID != uuid.Nil {
+			threadrunstate.Publish(ctx, c.pool, nil, nil, ch.AccountID, *entry.ThreadID)
+		}
 		if delivered {
 			c.notifyActiveRunInput(ctx, activeRun.ID)
 			return nil
@@ -512,6 +517,9 @@ func (c telegramConnector) continueTelegramInboundDispatch(
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
+	}
+	if *entry.ThreadID != uuid.Nil {
+		threadrunstate.Publish(ctx, c.pool, nil, nil, ch.AccountID, *entry.ThreadID)
 	}
 	slog.InfoContext(ctx, "telegram_inbound_processed",
 		"stage", inboundStateEnqueuedNewRun,
