@@ -1,8 +1,14 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLocale } from '../contexts/LocaleContext'
 import { useSkillPromptUI } from '../contexts/app-ui'
 import type { ShowcaseItem } from './types'
+
+const categoryGradients: Record<string, string> = {
+  '电商': 'linear-gradient(135deg, #1a0a2e 0%, #4c1d95 50%, #7c3aed 100%)',
+}
+
+const fallbackGradient = 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%)'
 
 interface Props {
   item: ShowcaseItem
@@ -12,11 +18,14 @@ export const ShowcaseCard = memo(function ShowcaseCard({ item }: Props) {
   const navigate = useNavigate()
   const { t } = useLocale()
   const { queueSkillPrompt } = useSkillPromptUI()
+  const [imgFailed, setImgFailed] = useState(false)
 
   const handleTryIt = () => {
     queueSkillPrompt(item.prompt)
     navigate('/')
   }
+
+  const gradient = categoryGradients[item.category ?? ''] ?? fallbackGradient
 
   return (
     <div
@@ -27,17 +36,19 @@ export const ShowcaseCard = memo(function ShowcaseCard({ item }: Props) {
         minHeight: 220,
       }}
     >
-      {/* Background image */}
+      {/* Background image / fallback gradient */}
       <div className="relative flex-1 overflow-hidden">
-        <img
-          src={item.imageUrl}
-          alt={item.title}
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-          style={{ minHeight: 140 }}
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none'
-          }}
-        />
+        {imgFailed ? (
+          <div className="h-full w-full" style={{ minHeight: 140, background: gradient }} />
+        ) : (
+          <img
+            src={item.imageUrl}
+            alt={item.title}
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            style={{ minHeight: 140 }}
+            onError={() => setImgFailed(true)}
+          />
+        )}
         {/* Gradient overlay for text readability */}
         <div
           className="absolute inset-x-0 bottom-0"
