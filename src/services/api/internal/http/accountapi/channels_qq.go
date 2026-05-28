@@ -150,6 +150,7 @@ type qqConnector struct {
 	inputNotify              func(ctx context.Context, runID uuid.UUID)
 	bus                      eventbus.EventBus
 	scheduledTriggersRepo    *data.ScheduledTriggersRepository
+	usersRepo                *data.UserRepository
 }
 
 // HandleEvent 处理来自 OneBot11 的入站事件
@@ -381,6 +382,7 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 				ChannelBindCodesRepo:     c.channelBindCodesRepo,
 				ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
 				ThreadRepo:               c.threadRepo,
+				UsersRepo:                c.usersRepo,
 			},
 			"QQ",
 		)
@@ -1131,6 +1133,7 @@ func qqOneBotCallbackHandler(
 	jobRepo *data.JobRepository,
 	pool data.DB,
 	attachmentStore MessageAttachmentPutStore,
+	usersRepo *data.UserRepository,
 ) nethttp.HandlerFunc {
 	var channelLedgerRepo *data.ChannelMessageLedgerRepository
 	if pool != nil {
@@ -1158,6 +1161,7 @@ func qqOneBotCallbackHandler(
 		pool:                     pool,
 		attachmentStore:          attachmentStore,
 		scheduledTriggersRepo:    &data.ScheduledTriggersRepository{},
+		usersRepo:                usersRepo,
 		inputNotify: func(ctx context.Context, runID uuid.UUID) {
 			if _, err := pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunInput, runID.String()); err != nil {
 				slog.Warn("qq_active_run_notify_failed", "run_id", runID, "error", err)

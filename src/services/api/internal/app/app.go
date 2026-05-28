@@ -813,6 +813,7 @@ func (a *Application) Run(ctx context.Context) error {
 		MessageRepo:              messageRepo,
 		RunEventRepo:             runEventRepo,
 		JobRepo:                  jobRepo,
+		UsersRepo:                userRepo,
 		Pool:                     pool,
 	})
 

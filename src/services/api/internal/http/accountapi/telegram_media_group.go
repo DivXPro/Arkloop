@@ -363,6 +363,7 @@ func (c telegramConnector) processTelegramMediaGroupMerged(
 					ChannelBindCodesRepo:     c.channelBindCodesRepo,
 					ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
 					ThreadRepo:               c.threadRepo,
+					UsersRepo:                c.usersRepo,
 				},
 				"Telegram",
 			)

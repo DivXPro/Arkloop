@@ -474,6 +474,7 @@ func NewHandler(cfg HandlerConfig) nethttp.Handler {
 		JobRepo:                  cfg.JobRepo,
 		Pool:                     cfg.Pool,
 		AttachmentStore:          cfg.MessageAttachmentStore,
+		UsersRepo:                cfg.UsersRepo,
 	})
 
 	// Weixin QR code login

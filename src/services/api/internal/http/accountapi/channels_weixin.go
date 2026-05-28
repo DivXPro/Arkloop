@@ -72,6 +72,7 @@ type weixinConnector struct {
 	channelReceiptsRepo      *data.ChannelMessageReceiptsRepository
 	channelLedgerRepo        *data.ChannelMessageLedgerRepository
 	personasRepo             *data.PersonasRepository
+	usersRepo                *data.UserRepository
 	threadRepo               *data.ThreadRepository
 	messageRepo              *data.MessageRepository
 	runEventRepo             *data.RunEventRepository
@@ -203,6 +204,7 @@ func (c *weixinConnector) HandleWeChatMessage(ctx context.Context, traceID strin
 			ChannelBindCodesRepo:     c.channelBindCodesRepo,
 			ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
 			ThreadRepo:               c.threadRepo,
+			UsersRepo:                c.usersRepo,
 		},
 		"微信",
 	)
@@ -354,11 +356,21 @@ func (c *weixinConnector) resolveWeixinThreadID(
 	threadRepoTx := c.threadRepo.WithTx(tx)
 
 	buildTitle := func() *string {
+		truncate := func(s string) string {
+			if len(s) <= 15 {
+				return s
+			}
+			return s[:8] + "..." + s[len(s)-4:]
+		}
 		var t string
 		if isPrivate {
-			t = platformChatID + " (微信私聊)"
+			if identity.DisplayName != nil && strings.TrimSpace(*identity.DisplayName) != "" {
+				t = strings.TrimSpace(*identity.DisplayName) + "@wechat"
+			} else {
+				t = truncate(platformChatID) + " (微信私聊)"
+			}
 		} else {
-			t = "微信群 " + platformChatID
+			t = "微信群 " + truncate(platformChatID)
 		}
 		return &t
 	}

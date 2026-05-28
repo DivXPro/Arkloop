@@ -255,6 +255,7 @@ func (c telegramConnector) persistTelegramInboundStageA(
 					ChannelBindCodesRepo:     c.channelBindCodesRepo,
 					ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
 					ThreadRepo:               c.threadRepo,
+					UsersRepo:                c.usersRepo,
 				},
 				"Telegram",
 			)

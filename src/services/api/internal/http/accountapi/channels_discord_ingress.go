@@ -470,7 +470,7 @@ func (c discordConnector) HandleInteraction(
 		return nil, err
 	}
 
-	reply, err := handleDiscordCommand(ctx, tx, ch, identity, event, c.channelBindCodesRepo, c.channelIdentitiesRepo, c.channelIdentityLinksRepo, c.channelDMThreadsRepo, c.threadRepo, c.runEventRepo, c.channelsRepo, c.personasRepo, nil, c.pool)
+	reply, err := handleDiscordCommand(ctx, tx, ch, identity, event, c.channelBindCodesRepo, c.channelIdentitiesRepo, c.channelIdentityLinksRepo, c.channelDMThreadsRepo, c.threadRepo, c.runEventRepo, c.channelsRepo, c.personasRepo, nil, c.pool, c.usersRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -990,6 +990,7 @@ func handleDiscordCommand(
 	personasRepo *data.PersonasRepository,
 	entSvc *entitlement.Service,
 	pool data.DB,
+	usersRepo *data.UserRepository,
 ) (*discordInteractionReply, error) {
 	cmdData := evt.ApplicationCommandData()
 	commandName := strings.TrimSpace(cmdData.Name)
@@ -1120,6 +1121,7 @@ func handleDiscordCommand(
 			ChannelBindCodesRepo:     channelBindCodesRepo,
 			ChannelIdentityLinksRepo: channelIdentityLinksRepo,
 			ThreadRepo:               threadRepo,
+			UsersRepo:                usersRepo,
 		},
 		"Discord",
 	)

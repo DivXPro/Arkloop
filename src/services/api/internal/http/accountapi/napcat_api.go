@@ -53,6 +53,7 @@ type QQCallbackDeps struct {
 	JobRepo                  *data.JobRepository
 	Pool                     data.DB
 	AttachmentStore          MessageAttachmentPutStore
+	UsersRepo                *data.UserRepository
 }
 
 // RegisterQQCallbackRoute registers POST /v1/napcat/onebot-callback.
@@ -72,6 +73,7 @@ func RegisterQQCallbackRoute(mux *nethttp.ServeMux, deps QQCallbackDeps) {
 		deps.JobRepo,
 		deps.Pool,
 		deps.AttachmentStore,
+		deps.UsersRepo,
 	)
 	mux.HandleFunc("POST /v1/napcat/onebot-callback", handler)
 }

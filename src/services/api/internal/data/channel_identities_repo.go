@@ -144,3 +144,18 @@ func (r *ChannelIdentitiesRepository) UpdateUserID(ctx context.Context, id uuid.
 	}
 	return nil
 }
+
+// UpdateDisplayName 更新身份记录的 display_name。
+func (r *ChannelIdentitiesRepository) UpdateDisplayName(ctx context.Context, id uuid.UUID, displayName *string) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE channel_identities SET display_name = $2, updated_at = now() WHERE id = $1`,
+		id, displayName,
+	)
+	if err != nil {
+		return fmt.Errorf("channel_identities.UpdateDisplayName: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("channel_identities.UpdateDisplayName: not found")
+	}
+	return nil
+}

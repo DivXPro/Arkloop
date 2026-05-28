@@ -133,6 +133,7 @@ type QQBotIngressRunnerDeps struct {
 	RunEventRepo             *data.RunEventRepository
 	JobRepo                  *data.JobRepository
 	Pool                     data.DB
+	UsersRepo                *data.UserRepository
 	Bus                      eventbus.EventBus
 	ScanInterval             time.Duration
 }
@@ -163,6 +164,7 @@ type qqbotConnector struct {
 	messageRepo              *data.MessageRepository
 	runEventRepo             *data.RunEventRepository
 	jobRepo                  *data.JobRepository
+	usersRepo                *data.UserRepository
 	pool                     data.DB
 	client                   *qqbotclient.Client
 	inputNotify              func(ctx context.Context, runID uuid.UUID)
@@ -279,6 +281,7 @@ func (m *qqbotIngressManager) ensureSession(parent context.Context, ch data.Chan
 			messageRepo:              m.deps.MessageRepo,
 			runEventRepo:             m.deps.RunEventRepo,
 			jobRepo:                  m.deps.JobRepo,
+			usersRepo:                m.deps.UsersRepo,
 			pool:                     m.deps.Pool,
 			client:                   client,
 			inputNotify:              buildQQBotInputNotifier(m.deps.Pool, m.deps.Bus),
@@ -443,6 +446,7 @@ func (c qqbotConnector) HandleMessage(ctx context.Context, traceID string, ch da
 			ChannelBindCodesRepo:     c.channelBindCodesRepo,
 			ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
 			ThreadRepo:               c.threadRepo,
+			UsersRepo:                c.usersRepo,
 		},
 		"QQBot",
 	)

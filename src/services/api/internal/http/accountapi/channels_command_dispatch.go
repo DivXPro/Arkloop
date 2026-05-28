@@ -24,6 +24,7 @@ type ChannelCommandDeps struct {
 	ChannelBindCodesRepo     *data.ChannelBindCodesRepository
 	ChannelIdentityLinksRepo *data.ChannelIdentityLinksRepository
 	ThreadRepo               *data.ThreadRepository
+	UsersRepo                *data.UserRepository
 }
 
 // ChannelCommandResolver provides channel-specific operations needed by DispatchChannelCommand.
@@ -192,7 +193,7 @@ func DispatchChannelCommand(
 			payload := resolver.ResolveStartPayload()
 			if strings.HasPrefix(payload, "bind_") {
 				code := strings.TrimPrefix(payload, "bind_")
-				replyText, err := bindChannelIdentity(ctx, tx, &ch, identity, code, channelLabel, deps.ChannelBindCodesRepo, deps.ChannelIdentitiesRepo, deps.ChannelIdentityLinksRepo, deps.ChannelDMThreadsRepo, deps.ThreadRepo, deps.ChannelsRepo)
+				replyText, err := bindChannelIdentity(ctx, tx, &ch, identity, code, channelLabel, deps.ChannelBindCodesRepo, deps.ChannelIdentitiesRepo, deps.ChannelIdentityLinksRepo, deps.ChannelDMThreadsRepo, deps.ThreadRepo, deps.ChannelsRepo, deps.UsersRepo)
 				if err != nil {
 					return true, nil, err
 				}
@@ -209,7 +210,7 @@ func DispatchChannelCommand(
 		if code == "" {
 			return true, &CommandReply{Text: "用法：/bind <code>"}, nil
 		}
-		replyText, err := bindChannelIdentity(ctx, tx, &ch, identity, code, channelLabel, deps.ChannelBindCodesRepo, deps.ChannelIdentitiesRepo, deps.ChannelIdentityLinksRepo, deps.ChannelDMThreadsRepo, deps.ThreadRepo, deps.ChannelsRepo)
+		replyText, err := bindChannelIdentity(ctx, tx, &ch, identity, code, channelLabel, deps.ChannelBindCodesRepo, deps.ChannelIdentitiesRepo, deps.ChannelIdentityLinksRepo, deps.ChannelDMThreadsRepo, deps.ThreadRepo, deps.ChannelsRepo, deps.UsersRepo)
 		if err != nil {
 			return true, nil, err
 		}

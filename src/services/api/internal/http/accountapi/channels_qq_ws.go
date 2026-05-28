@@ -33,6 +33,7 @@ type QQOneBotWSListenerDeps struct {
 	MessageRepo              *data.MessageRepository
 	RunEventRepo             *data.RunEventRepository
 	JobRepo                  *data.JobRepository
+	UsersRepo                *data.UserRepository
 	Pool                     data.DB
 	AttachmentStore          MessageAttachmentPutStore
 	Bus                      eventbus.EventBus
@@ -62,6 +63,7 @@ func StartQQOneBotWSListener(ctx context.Context, deps QQOneBotWSListenerDeps) {
 		channelReceiptsRepo:      deps.ChannelReceiptsRepo,
 		channelLedgerRepo:        channelLedgerRepo,
 		personasRepo:             deps.PersonasRepo,
+		usersRepo:                deps.UsersRepo,
 		threadRepo:               deps.ThreadRepo,
 		messageRepo:              deps.MessageRepo,
 		runEventRepo:             deps.RunEventRepo,

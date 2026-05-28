@@ -73,6 +73,7 @@ type feishuConnector struct {
 	messageRepo              *data.MessageRepository
 	runEventRepo             *data.RunEventRepository
 	jobRepo                  *data.JobRepository
+	usersRepo                *data.UserRepository
 	pool                     data.DB
 	inputNotify              func(ctx context.Context, runID uuid.UUID)
 }
@@ -497,6 +498,7 @@ func feishuWebhookEntry(
 	channelBindCodesRepo *data.ChannelBindCodesRepository,
 	channelIdentityLinksRepo *data.ChannelIdentityLinksRepository,
 	pool data.DB,
+	usersRepo *data.UserRepository,
 ) func(nethttp.ResponseWriter, *nethttp.Request) {
 	var channelLedgerRepo *data.ChannelMessageLedgerRepository
 	if pool != nil {
@@ -519,6 +521,7 @@ func feishuWebhookEntry(
 		messageRepo:              messageRepo,
 		runEventRepo:             runEventRepo,
 		jobRepo:                  jobRepo,
+		usersRepo:                usersRepo,
 		channelBindCodesRepo:     channelBindCodesRepo,
 		channelIdentityLinksRepo: channelIdentityLinksRepo,
 		pool:                     pool,
@@ -973,6 +976,7 @@ func (c *feishuConnector) HandleIncoming(ctx context.Context, traceID string, ch
 			ChannelBindCodesRepo:     c.channelBindCodesRepo,
 			ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
 			ThreadRepo:               c.threadRepo,
+			UsersRepo:                c.usersRepo,
 		},
 		"飞书",
 	)

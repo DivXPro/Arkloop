@@ -737,6 +737,7 @@ func RunDesktop(ctx context.Context) error {
 		MessageRepo:              messageRepo,
 		RunEventRepo:             runEventRepo,
 		JobRepo:                  jobRepo,
+		UsersRepo:                userRepo,
 		Pool:                     pgxPool,
 		Bus:                      desktopBus,
 	})
@@ -754,6 +755,7 @@ func RunDesktop(ctx context.Context) error {
 		MessageRepo:              messageRepo,
 		RunEventRepo:             runEventRepo,
 		JobRepo:                  jobRepo,
+		UsersRepo:                userRepo,
 		Pool:                     pgxPool,
 		AttachmentStore:          messageAttachmentStore,
 		Bus:                      desktopBus,
@@ -767,6 +769,7 @@ func RunDesktop(ctx context.Context) error {
 		ChannelDMThreadsRepo:     channelDMThreadsRepo,
 		ChannelGroupThreadsRepo:  channelGroupThreadsRepo,
 		ChannelReceiptsRepo:      channelReceiptsRepo,
+		UsersRepo:                userRepo,
 		PersonasRepo:             personasRepo,
 		ThreadRepo:               threadRepo,
 		MessageRepo:              messageRepo,

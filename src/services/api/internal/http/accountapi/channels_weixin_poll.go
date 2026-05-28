@@ -36,6 +36,7 @@ type WeChatPollingDeps struct {
 	RunEventRepo            *data.RunEventRepository
 	JobRepo                 *data.JobRepository
 	SecretsRepo             *data.SecretsRepository
+	UsersRepo               *data.UserRepository
 	Pool                    data.DB
 	Bus                     eventbus.EventBus
 }
@@ -64,6 +65,7 @@ func StartWeChatPollingListener(ctx context.Context, deps WeChatPollingDeps) {
 		channelReceiptsRepo:      deps.ChannelReceiptsRepo,
 		channelLedgerRepo:       channelLedgerRepo,
 		personasRepo:            deps.PersonasRepo,
+		usersRepo:               deps.UsersRepo,
 		threadRepo:              deps.ThreadRepo,
 		messageRepo:             deps.MessageRepo,
 		runEventRepo:            deps.RunEventRepo,

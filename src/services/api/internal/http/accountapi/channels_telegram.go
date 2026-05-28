@@ -1858,6 +1858,7 @@ func bindChannelIdentity(
 	channelDMThreadsRepo *data.ChannelDMThreadsRepository,
 	threadRepo *data.ThreadRepository,
 	channelsRepo *data.ChannelsRepository,
+	usersRepo *data.UserRepository,
 ) (string, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
 	if code == "" {
@@ -1901,6 +1902,11 @@ func bindChannelIdentity(
 	}
 	if err := channelIdentitiesRepo.WithTx(tx).UpdateUserID(ctx, identity.ID, &consumed.IssuedByUserID); err != nil {
 		return "", err
+	}
+	if usersRepo != nil {
+		if user, err := usersRepo.WithTx(tx).GetByID(ctx, consumed.IssuedByUserID); err == nil && user != nil && strings.TrimSpace(user.Username) != "" {
+			_ = channelIdentitiesRepo.WithTx(tx).UpdateDisplayName(ctx, identity.ID, &user.Username)
+		}
 	}
 	if channelIdentityLinksRepo != nil {
 		if _, err := channelIdentityLinksRepo.WithTx(tx).Upsert(ctx, channel.ID, identity.ID); err != nil {
