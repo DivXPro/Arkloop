@@ -1802,6 +1802,11 @@ export interface LocaleStrings {
   scheduledJobsTimeout: string;
 
   // showcase
+  showcaseTitle: string;
+  showcaseBack: string;
+  showcaseRefresh: string;
+  showcaseEmptyTitle: string;
+  showcaseEmptyDesc: string;
   showcaseReplay: string;
   showcaseTryIt: string;
 
