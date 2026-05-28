@@ -25,6 +25,7 @@ type Deps struct {
 	ThreadShareRepo          *data.ThreadShareRepository
 	ThreadReportRepo         *data.ThreadReportRepository
 	MessageRepo              *data.MessageRepository
+	ReplayRepo               *data.ReplayRepository
 	RunEventRepo             *data.RunEventRepository
 	ShellSessionRepo         *data.ShellSessionRepository
 	ProjectRepo              *data.ProjectRepository
@@ -92,6 +93,7 @@ func RegisterRoutes(mux *nethttp.ServeMux, deps Deps) {
 			deps.FlagService,
 		),
 	)
+	mux.HandleFunc("/v1/replays", replaysEntry(deps.AuthService, deps.AccountMembershipRepo, deps.ThreadRepo, deps.MessageRepo, deps.ReplayRepo, deps.APIKeysRepo, deps.AuditWriter))
 	mux.HandleFunc("/v1/s/", publicShareEntry(deps.ThreadShareRepo, deps.ThreadRepo, deps.MessageRepo, deps.FlagService))
 	mux.HandleFunc("/v1/runs", listGlobalRuns(deps.AuthService, deps.AccountMembershipRepo, deps.RunEventRepo, deps.APIKeysRepo))
 	mux.HandleFunc(

@@ -518,6 +518,8 @@ export const en: LocaleStrings = {
   sharePagePasswordWrong: "Incorrect password",
   sharePageNotFound: "Share link not found or expired",
   sharePagePoweredBy: "Powered by Arkloop",
+  replayRestart: "Replay",
+  replayButton: "Play replay",
   reportButton: "Report",
   reportTitle: "Report this chat",
   reportSubtitle: "Select all that apply",

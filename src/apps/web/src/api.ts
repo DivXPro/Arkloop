@@ -1708,6 +1708,46 @@ export async function verifySharePassword(
   })
 }
 
+// Replay API
+
+export type CreateReplayResponse = {
+  id: string
+  thread_id: string
+  title: string | null
+  created_at: string
+}
+
+export type ReplayMessageItem = {
+  id: string
+  role: string
+  content: string
+  content_json?: object
+  created_at: string
+}
+
+export type GetReplayResponse = {
+  id: string
+  title: string | null
+  messages: ReplayMessageItem[]
+}
+
+export async function createReplay(
+  accessToken: string,
+  threadId: string,
+): Promise<CreateReplayResponse> {
+  return await apiFetch<CreateReplayResponse>(`/v1/replays`, {
+    method: 'POST',
+    accessToken,
+    body: JSON.stringify({ thread_id: threadId }),
+  })
+}
+
+export async function getReplay(
+  replayId: string,
+): Promise<GetReplayResponse> {
+  return await apiFetch<GetReplayResponse>(`/v1/replays/${replayId}`)
+}
+
 // LLM Providers API (BYOK)
 
 export type LlmProviderModel = {

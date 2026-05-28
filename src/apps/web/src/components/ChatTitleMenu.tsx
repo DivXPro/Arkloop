@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Glasses, Pencil, Share2, Star, Trash2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { ChevronDown, Glasses, Pencil, Play, Share2, Star, Trash2 } from 'lucide-react'
 import { isDesktop } from '@arkloop/shared/desktop'
 import { ConfirmDialog } from '@arkloop/shared'
 import { useLocale } from '../contexts/LocaleContext'
@@ -20,6 +21,7 @@ import {
   updateThreadTitle,
   deleteThread,
   listStarredThreadIds,
+  createReplay,
 } from '../api'
 import { ModeSwitch } from './ModeSwitch'
 import { NotificationBell } from './NotificationBell'
@@ -32,6 +34,7 @@ export function ChatTitleMenu() {
 function ChatTitleMenuContent({ threadId }: { threadId: string | null }) {
   const { accessToken } = useAuth()
   const { t } = useLocale()
+  const navigate = useNavigate()
   const threadList = useThreadList()
   const msgs = useMessageStore()
   const { appMode, availableAppModes, setAppMode } = useAppModeUI()
@@ -154,6 +157,17 @@ function ChatTitleMenuContent({ threadId }: { threadId: string | null }) {
     setTitleMenuOpen(false)
     panels.openShareModal()
   }, [panels])
+
+  const handleCreateReplay = useCallback(async () => {
+    if (!threadId || !accessToken) return
+    setTitleMenuOpen(false)
+    try {
+      const replay = await createReplay(accessToken, threadId)
+      navigate(`/replay/${replay.id}`)
+    } catch {
+      // silently fail
+    }
+  }, [threadId, accessToken, navigate])
 
   const pendingIncognito = msgs.pendingIncognito
 
@@ -358,6 +372,13 @@ function ChatTitleMenuContent({ threadId }: { threadId: string | null }) {
                 {t.shareThread}
               </button>
             )}
+            <button
+              onClick={() => void handleCreateReplay()}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] text-[var(--c-text-secondary)] hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-primary)]"
+            >
+              <Play size={13} style={{ flexShrink: 0 }} />
+              {t.replayButton}
+            </button>
             <div style={{ height: '1px', background: 'var(--c-border-subtle)', margin: '2px 0' }} />
             <button
               onClick={confirmDelete}

@@ -228,6 +228,7 @@ func (a *Application) Run(ctx context.Context) error {
 		threadShareRepo       *data.ThreadShareRepository
 		threadReportRepo      *data.ThreadReportRepository
 		messageRepo           *data.MessageRepository
+		replayRepo            *data.ReplayRepository
 		runEventRepo          *data.RunEventRepository
 		runPipelineEventsRepo *data.RunPipelineEventsRepository
 		shellSessionRepo      *data.ShellSessionRepository
@@ -337,6 +338,10 @@ func (a *Application) Run(ctx context.Context) error {
 			return err
 		}
 		messageRepo, err = data.NewMessageRepository(pool)
+		if err != nil {
+			return err
+		}
+		replayRepo, err = data.NewReplayRepository(pool)
 		if err != nil {
 			return err
 		}
@@ -843,6 +848,7 @@ func (a *Application) Run(ctx context.Context) error {
 			ThreadShareRepo:              threadShareRepo,
 			ThreadReportRepo:             threadReportRepo,
 			MessageRepo:                  messageRepo,
+			ReplayRepo:                   replayRepo,
 			RunEventRepo:                 runEventRepo,
 			RunPipelineEventsRepo:        runPipelineEventsRepo,
 			ShellSessionRepo:             shellSessionRepo,

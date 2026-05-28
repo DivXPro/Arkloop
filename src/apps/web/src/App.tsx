@@ -371,7 +371,7 @@ function App() {
       <Route path="/setup" element={<HeadlessSetupPage onLoggedIn={handleLoggedIn} />} />
       <Route path="/verify" element={<VerifyEmailPage />} />
       <Route path="/s/:token" element={<SharePage />} />
-      <Route path="/replay/:token" element={<ReplayPage />} />
+      <Route path="/replay/:replayId" element={<ReplayPage />} />
       {!authChecked ? (
         <Route path="*" element={<LoadingPage label={t.loading} />} />
       ) : !accessToken ? (
