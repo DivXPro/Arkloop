@@ -443,6 +443,7 @@ export const en: LocaleStrings = {
   showcaseEmptyDesc: "Check back later",
   showcaseReplay: "Replay",
   showcaseTryIt: "Try It",
+  showcaseEntryLink: "Not sure what to chat about? Explore the showcase",
   addFromLocal: "Add from local files",
   addFromGitHub: "Add from GitHub",
   learningMode: "Learning Guide",

@@ -441,6 +441,7 @@ export const zh: LocaleStrings = {
   showcaseEmptyDesc: "稍后再来看看",
   showcaseReplay: "回放",
   showcaseTryIt: "试一试",
+  showcaseEntryLink: "不知道聊什么？看看案例墙",
   addFromLocal: "从本地文件添加",
   addFromGitHub: "从 GitHub 添加",
   learningMode: "学习辅导",

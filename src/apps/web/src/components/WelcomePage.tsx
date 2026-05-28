@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Glasses } from 'lucide-react'
+import { Glasses, Sparkles } from 'lucide-react'
 import type { LocaleStrings } from '../locales'
 import { ChatInput, type Attachment, type ChatInputHandle } from './ChatInput'
 import { SuggestionChips, type Suggestion } from './SuggestionChips'
@@ -700,6 +700,17 @@ export function WelcomePage() {
             visible={!isSearchMode && !isPrivateMode}
             accessToken={accessToken}
           />
+          {/* Showcase entry link */}
+          <div className="mt-3 flex justify-center">
+            <button
+              type="button"
+              onClick={() => navigate('/showcase')}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] text-[var(--c-text-secondary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-primary)]"
+            >
+              <Sparkles size={14} />
+              <span>{t.showcaseEntryLink}</span>
+            </button>
+          </div>
         </div>
         </div>
         {showDebugPanel && <DebugTrigger />}

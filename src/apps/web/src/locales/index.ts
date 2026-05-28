@@ -1809,6 +1809,7 @@ export interface LocaleStrings {
   showcaseEmptyDesc: string;
   showcaseReplay: string;
   showcaseTryIt: string;
+  showcaseEntryLink: string;
 
   // onboarding wizard (desktop)
   onboarding: {
