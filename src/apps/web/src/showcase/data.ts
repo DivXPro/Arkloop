@@ -7,7 +7,7 @@ const defaultShowcases: ShowcaseItem[] = [
     title: '电商主图生成',
     description: '上传商品图片，AI 自动生成多场景、多风格的专业电商主图',
     imageUrl: '/showcase/ecommerce-main.svg',
-    prompt: '/ecommerce-image-generator 帮我生成电商主图',
+    prompt: '/ecommerce-image-generator 我上传了商品图片，帮我生成电商主图',
     category: '电商',
   },
   {
@@ -15,7 +15,7 @@ const defaultShowcases: ShowcaseItem[] = [
     title: '电商详情页图生成',
     description: '上传商品图片，AI 自动生成完整的电商详情页系列图片',
     imageUrl: '/showcase/ecommerce-detail.svg',
-    prompt: '/ecommerce-image-generator 帮我生成电商详情页图',
+    prompt: '/ecommerce-image-generator 我上传了商品图片，帮我生成电商详情页图',
     category: '电商',
   },
   {
