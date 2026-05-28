@@ -505,9 +505,10 @@ var registry = []ToolMeta{
 		Group:     GroupDocument,
 		Label:     "Read guidelines",
 		ShortDesc: "load the canonical generative UI design system modules",
-		LLMDescription: "Returns design guidelines for show_widget and HTML/SVG visual generation. " +
+		LLMDescription: "Returns HTML/SVG widget design guidelines (layout, colors, typography). " +
+			"This is NOT an image generation tool — use image_generate to create images. " +
 			"Call once before your first show_widget call. Do NOT mention this call to the user. " +
-			"Pick the modules that match your use case: interactive, chart, mockup, art, diagram. " +
+			"Pick modules: interactive, chart, mockup, illustration, diagram. " +
 			"This tool returns the full canonical guideline text and must not be summarized.",
 	},
 	{
