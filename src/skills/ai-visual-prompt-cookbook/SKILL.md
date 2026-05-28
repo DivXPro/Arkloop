@@ -47,10 +47,10 @@ This applies to: choosing styles, confirming templates, deciding to proceed with
 
 Always render preview images using markdown when presenting styles:
 ```markdown
-![Style Preview](data:image/jpeg;base64,/9j/4AAQ...)
+![Style Preview](https://api.example.com/preview/slug/16x9.jpg)
 ```
 
-The MCP server returns base64-encoded images in tool responses — render them so the user can visually browse.
+The MCP server returns HTTP URLs for preview images — render them as markdown so the user can visually browse.
 
 ### Rule 3: Never describe images you cannot see
 
