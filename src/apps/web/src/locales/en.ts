@@ -436,6 +436,8 @@ export const en: LocaleStrings = {
   freePlan: "Free plan",
   freeTrial: "Start free trial",
   freeTrialDesc: "We're currently free. Run out of credits? Come find us",
+  showcaseReplay: "Replay",
+  showcaseTryIt: "Try It",
   addFromLocal: "Add from local files",
   addFromGitHub: "Add from GitHub",
   learningMode: "Learning Guide",

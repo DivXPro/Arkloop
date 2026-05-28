@@ -434,6 +434,8 @@ export const zh: LocaleStrings = {
   freePlan: "免费计划",
   freeTrial: "开始免费试用",
   freeTrialDesc: "哈哈，我们目前暂时不收费哦，如果不够用了可以找我来换一点积分",
+  showcaseReplay: "回放",
+  showcaseTryIt: "试一试",
   addFromLocal: "从本地文件添加",
   addFromGitHub: "从 GitHub 添加",
   learningMode: "学习辅导",
