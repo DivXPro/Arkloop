@@ -31,7 +31,7 @@ const defaultShowcases: ShowcaseItem[] = [
     title: 'Kimi WebBridge',
     description: '控制真实浏览器，支持导航、点击、输入、截图、表单填写等自动化操作',
     imageUrl: '/showcase/kimi-webbridge.svg',
-    prompt: '/kimi-webbridge 帮我打开网页截图',
+    prompt: '/kimi-webbridge 帮我到小红书上搜索宠物猫信息看看大家最近关注什么哪些话题',
     category: '工具',
   },
 ]
