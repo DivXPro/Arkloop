@@ -27,12 +27,12 @@ const defaultShowcases: ShowcaseItem[] = [
     category: '设计',
   },
   {
-    id: 'kimi-webbridge',
-    title: 'Kimi WebBridge',
-    description: '控制真实浏览器，支持导航、点击、输入、截图、表单填写等自动化操作',
-    imageUrl: '/showcase/kimi-webbridge.svg',
-    prompt: '/kimi-webbridge 帮看看淘宝上iPhone17卖的是什么价格，帮我找个便宜的',
-    category: '工具',
+    id: 'ecommerce-price-research',
+    title: '电商价格调研',
+    description: '自动浏览电商平台，分析商品价格、产品特性和品牌情况',
+    imageUrl: '/showcase/ecommerce-research.svg',
+    prompt: '/opencli-browser 从淘宝上调研防晒袖的市场情况，分析价格、产品特性和品牌的基本情况',
+    category: '电商',
   },
 ]
 
