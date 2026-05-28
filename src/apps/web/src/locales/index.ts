@@ -1813,6 +1813,16 @@ export interface LocaleStrings {
   scheduledJobsDeleteAfterRun: string;
   scheduledJobsTimeout: string;
 
+  // showcase
+  showcaseTitle: string;
+  showcaseBack: string;
+  showcaseRefresh: string;
+  showcaseEmptyTitle: string;
+  showcaseEmptyDesc: string;
+  showcaseReplay: string;
+  showcaseTryIt: string;
+  showcaseEntryLink: string;
+
   // onboarding wizard (desktop)
   onboarding: {
     welcomeDesc: string;
