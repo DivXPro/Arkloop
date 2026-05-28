@@ -1,8 +1,0 @@
-skill_key: kimi-webbridge
-version: "1"
-display_name: Kimi WebBridge
-description: >
-  通过本地守护进程控制用户真实浏览器（保留登录会话），执行导航、点击、输入、截图、页面内容读取等操作。
-  适用于：打开网页、截图、浏览器自动化、网页内容抓取、表单填写等任何需要真实浏览器的场景。
-  关键词：browser、浏览器、网页、打开 URL、截图、screenshot、自动化、抓取、表单填写。
-instruction_path: SKILL.md
