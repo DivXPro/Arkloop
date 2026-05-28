@@ -40,6 +40,7 @@ import {
 } from '@arkloop/shared/desktop'
 
 const ScheduledJobsPage = lazy(() => import('./pages/scheduled-jobs/ScheduledJobsPage'))
+import { ShowcasePage } from './showcase/ShowcasePage'
 
 const sessionRestoreRetries = 12
 const sessionRestoreDelayMs = 1000
@@ -398,6 +399,7 @@ function App() {
             <Route path="t/:threadId" element={<ChatShell />} />
             <Route path="t/:threadId/search" element={<ChatShell />} />
             <Route path="scheduled-jobs" element={<Suspense fallback={<LoadingPage label={t.loading} />}><ScheduledJobsPage /></Suspense>} />
+            <Route path="showcase" element={<ShowcasePage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </>
