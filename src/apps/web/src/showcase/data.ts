@@ -26,6 +26,14 @@ const defaultShowcases: ShowcaseItem[] = [
     prompt: '/ai-visual-prompt-cookbook 帮我设计一张海报',
     category: '设计',
   },
+  {
+    id: 'kimi-webbridge',
+    title: 'Kimi WebBridge',
+    description: '控制真实浏览器，支持导航、点击、输入、截图、表单填写等自动化操作',
+    imageUrl: '/showcase/kimi-webbridge.svg',
+    prompt: '/kimi-webbridge 帮我打开网页截图',
+    category: '工具',
+  },
 ]
 
 export interface ShowcaseDataState {
