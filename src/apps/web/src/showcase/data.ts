@@ -42,6 +42,14 @@ const defaultShowcases: ShowcaseItem[] = [
     prompt: '/x-to-xiaohongshu 帮我把这篇推特长文转成小红书图文',
     category: '内容',
   },
+  {
+    id: 'personal-image-analysis',
+    title: '个人形象分析',
+    description: '上传个人照片，AI 自动分析色彩季型、风格气质，生成专属穿搭建议与形象报告',
+    imageUrl: '/showcase/personal-image-analysis.svg',
+    prompt: '/personal-image-analysis 我上传了个人照片，帮我生成形象分析系列图',
+    category: '设计',
+  },
 ]
 
 export interface ShowcaseDataState {

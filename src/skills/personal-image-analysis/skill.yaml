@@ -1,0 +1,10 @@
+skill_key: personal-image-analysis
+version: "1"
+display_name: 个人形象分析系列图生成器
+description: >
+  基于用户上传的个人照片，生成一组三联式个人形象分析视觉图：
+  第1张展示分析结果与色板，第2张展示专属穿搭妆造建议，
+  第3张展示带评分图表和成长计划的形象报告。
+  适用于AI变美产品、色彩测试App、形象顾问SaaS等场景。
+  关键词：形象分析、色彩分析、穿搭建议、妆造建议、形象报告、变美、个人风格、色彩季型、三联海报。
+instruction_path: SKILL.md
