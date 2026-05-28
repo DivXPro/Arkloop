@@ -5,6 +5,7 @@ import {
   SquarePen,
   Search,
   Clock,
+  Sparkles,
   PanelLeftClose,
   Bolt,
   Glasses,
@@ -1718,6 +1719,19 @@ export const Sidebar = memo(function Sidebar({
               <Clock size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
             </span>
             <span className={`relative ${navLabelClass}`} style={navLabelStyle}>{t.scheduledJobs}</span>
+          </button>
+
+          <button
+            onClick={() => navigate('/showcase')}
+            aria-label={t.showcaseTitle}
+            className={navButtonClass}
+            style={navButtonStyle}
+          >
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100" style={navHoverStyle} />
+            <span className="relative flex h-[16px] w-[16px] shrink-0 items-center justify-center">
+              <Sparkles size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
+            </span>
+            <span className={`relative ${navLabelClass}`} style={navLabelStyle}>{t.showcaseTitle}</span>
           </button>
       </nav>
 
