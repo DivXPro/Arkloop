@@ -1,0 +1,9 @@
+skill_key: ai-visual-prompt-cookbook
+version: "1.0.0"
+display_name: AI 视觉提示词 Cookbook
+description: >
+  视觉风格设计与 AI 图像生成提示词助手。
+  帮助用户从 41 种预设风格中发现合适的视觉风格，
+  指导填写模板变量，并生成可用于 ChatGPT、Midjourney、FLUX 等工具的成品提示词。
+  关键词：海报设计、视觉风格、AI 生图、提示词模板、排版设计、插画风格。
+instruction_path: SKILL.md
