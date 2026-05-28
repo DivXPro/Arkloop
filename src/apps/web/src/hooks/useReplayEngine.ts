@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { AgentMessage } from '../agent-ui'
-import { buildReplaySteps, sleep, type ReplayStep } from '../lib/replay'
+import { buildReplaySteps, sleep } from '../lib/replay'
 
 export interface ReplayEngineState {
   visibleMessages: AgentMessage[]
@@ -10,39 +10,39 @@ export interface ReplayEngineState {
 }
 
 export function useReplayEngine(allMessages: AgentMessage[]): ReplayEngineState {
-  const [visibleMessages, setVisibleMessages] = useState<AgentMessage[]>([])
-  const [isComplete, setIsComplete] = useState(false)
-  const [currentIndex, setCurrentIndex] = useState(0)
+  const [state, setState] = useState<ReplayEngineState>({
+    visibleMessages: [],
+    isComplete: false,
+    currentIndex: 0,
+    totalSteps: 0,
+  })
   const cancelledRef = useRef(false)
 
   const steps = buildReplaySteps(allMessages)
-
-  const reset = useCallback(() => {
-    cancelledRef.current = true
-    setVisibleMessages([])
-    setIsComplete(false)
-    setCurrentIndex(0)
-  }, [])
 
   useEffect(() => {
     if (allMessages.length === 0) return
 
     cancelledRef.current = false
-    setVisibleMessages([])
-    setIsComplete(false)
-    setCurrentIndex(0)
+    setState({
+      visibleMessages: [],
+      isComplete: false,
+      currentIndex: 0,
+      totalSteps: steps.length,
+    })
 
     async function run() {
+      const visible: AgentMessage[] = []
       for (let i = 0; i < steps.length; i++) {
         if (cancelledRef.current) break
 
         const step = steps[i]
-        setCurrentIndex(i)
-
-        setVisibleMessages((prev) => {
-          if (prev.some((m) => m.id === step.message.id)) return prev
-          return [...prev, step.message]
-        })
+        visible.push(step.message)
+        setState((prev) => ({
+          ...prev,
+          currentIndex: i,
+          visibleMessages: visible,
+        }))
 
         if (i < steps.length - 1) {
           await sleep(step.delayAfterMs)
@@ -50,7 +50,10 @@ export function useReplayEngine(allMessages: AgentMessage[]): ReplayEngineState 
       }
 
       if (!cancelledRef.current) {
-        setIsComplete(true)
+        setState((prev) => ({
+          ...prev,
+          isComplete: true,
+        }))
       }
     }
 
@@ -64,10 +67,5 @@ export function useReplayEngine(allMessages: AgentMessage[]): ReplayEngineState 
     }
   }, [allMessages, steps])
 
-  return {
-    visibleMessages,
-    isComplete,
-    currentIndex,
-    totalSteps: steps.length,
-  }
+  return state
 }
