@@ -23,7 +23,7 @@ const defaultShowcases: ShowcaseItem[] = [
     title: 'AI 视觉提示词 Cookbook',
     description: '从 41 种预设风格中挑选，快速生成海报、Logo、社媒图片等专业提示词',
     imageUrl: '/showcase/visual-cookbook.svg',
-    prompt: '/ai-visual-prompt-cookbook 帮我设计一张海报',
+    prompt: '/ai-visual-prompt-cookbook 帮我搜索视觉风格库，找几个适合品牌海报的参考模板看看',
     category: '设计',
   },
   {
