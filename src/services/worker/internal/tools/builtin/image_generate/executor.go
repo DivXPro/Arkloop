@@ -260,6 +260,9 @@ func (e *ToolExecutor) loadInputImages(ctx context.Context, args map[string]any,
 		if err != nil && e.messageAttachmentStore != nil {
 			data, contentType, err = e.messageAttachmentStore.GetWithContentType(ctx, key)
 		}
+		if err != nil && e.messageAttachmentStore != nil && !strings.HasPrefix(key, "attachments/") {
+			data, contentType, err = e.messageAttachmentStore.GetWithContentType(ctx, "attachments/"+key)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("input_images[%d] not found", idx)
 		}
