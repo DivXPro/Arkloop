@@ -18,6 +18,14 @@ const defaultShowcases: ShowcaseItem[] = [
     prompt: '帮我生成电商详情页图',
     category: '电商',
   },
+  {
+    id: 'visual-prompt-cookbook',
+    title: 'AI 视觉提示词 Cookbook',
+    description: '从 41 种预设风格中挑选，快速生成海报、Logo、社媒图片等专业提示词',
+    imageUrl: '/showcase/visual-cookbook.svg',
+    prompt: '帮我设计一张海报',
+    category: '设计',
+  },
 ]
 
 export interface ShowcaseDataState {

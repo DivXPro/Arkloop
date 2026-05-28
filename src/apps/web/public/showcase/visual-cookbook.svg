@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#0284c7"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="400" fill="url(#bg)"/>
+  <!-- Abstract design elements: overlapping shapes -->
+  <g opacity="0.12">
+    <circle cx="180" cy="160" r="100" fill="white"/>
+    <rect x="300" y="80" width="180" height="180" rx="20" fill="white" transform="rotate(15 390 170)"/>
+    <polygon points="200,300 280,220 360,300 280,380" fill="white"/>
+  </g>
+  <!-- Palette/swatches hint -->
+  <g opacity="0.2">
+    <circle cx="120" cy="120" r="16" fill="#f59e0b"/>
+    <circle cx="165" cy="120" r="16" fill="#ef4444"/>
+    <circle cx="210" cy="120" r="16" fill="#8b5cf6"/>
+    <circle cx="255" cy="120" r="16" fill="#10b981"/>
+    <circle cx="300" cy="120" r="16" fill="#3b82f6"/>
+  </g>
+  <!-- Grid/grid lines suggesting layout -->
+  <g opacity="0.08" fill="none" stroke="white" stroke-width="1">
+    <line x1="60" y1="0" x2="60" y2="400"/>
+    <line x1="540" y1="0" x2="540" y2="400"/>
+    <line x1="0" y1="60" x2="600" y2="60"/>
+    <line x1="0" y1="340" x2="600" y2="340"/>
+  </g>
+  <text x="300" y="370" text-anchor="middle" fill="white" font-size="20" font-family="system-ui, sans-serif" opacity="0.5">AI 视觉提示词 Cookbook</text>
+</svg>

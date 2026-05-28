@@ -6,6 +6,7 @@ import type { ShowcaseItem } from './types'
 
 const categoryGradients: Record<string, string> = {
   '电商': 'linear-gradient(135deg, #1a0a2e 0%, #4c1d95 50%, #7c3aed 100%)',
+  '设计': 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0284c7 100%)',
 }
 
 const fallbackGradient = 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%)'
