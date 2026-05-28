@@ -67,6 +67,7 @@ export function useShowcases(): ShowcaseDataState {
     const endpoint = import.meta.env.VITE_SHOWCASE_API_URL
     if (!endpoint) return
 
+    let cancelled = false
     setLoading(true)
     fetch(endpoint, { signal: AbortSignal.timeout(8000) })
       .then((r) => {
@@ -74,15 +75,21 @@ export function useShowcases(): ShowcaseDataState {
         return r.json()
       })
       .then((data) => {
+        if (cancelled) return
         if (Array.isArray(data?.showcases)) {
           setItems(data.showcases)
           setError(null)
         }
       })
       .catch((err) => {
+        if (cancelled) return
         setError(err instanceof Error ? err.message : String(err))
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => { cancelled = true }
   }, [])
 
   return { items, loading, error }
