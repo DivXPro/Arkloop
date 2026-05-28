@@ -72,6 +72,7 @@ type HandlerConfig struct {
 	ThreadShareRepo       *data.ThreadShareRepository
 	ThreadReportRepo      *data.ThreadReportRepository
 	MessageRepo           *data.MessageRepository
+	ReplayRepo            *data.ReplayRepository
 	RunEventRepo          *data.RunEventRepository
 	RunPipelineEventsRepo *data.RunPipelineEventsRepository
 	ShellSessionRepo      *data.ShellSessionRepository
@@ -267,6 +268,7 @@ func NewHandler(cfg HandlerConfig) nethttp.Handler {
 		ThreadShareRepo:          cfg.ThreadShareRepo,
 		ThreadReportRepo:         cfg.ThreadReportRepo,
 		MessageRepo:              cfg.MessageRepo,
+		ReplayRepo:               cfg.ReplayRepo,
 		RunEventRepo:             cfg.RunEventRepo,
 		ShellSessionRepo:         cfg.ShellSessionRepo,
 		ProjectRepo:              cfg.ProjectRepo,
