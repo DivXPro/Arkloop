@@ -118,6 +118,7 @@ func WellKnownSkillDirs() []string {
 		return nil
 	}
 	candidates := []string{
+		filepath.Join(home, ".agents", "skills"),
 		filepath.Join(home, ".claude", "skills"),
 		filepath.Join(home, ".config", "alma", "skills"),
 	}
