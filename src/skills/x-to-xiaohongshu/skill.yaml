@@ -1,0 +1,9 @@
+skill_key: x-to-xiaohongshu
+version: "1"
+display_name: X长文转小红书图文生成器
+description: >
+  将推特/X 长文内容转化为适合小红书平台传播的图文内容。
+  自动获取推特内容，提炼核心观点，生成有个人视角的读后感文案，
+  经过 Hook 和爆款检查优化后，生成视觉统一的系列配图。
+  关键词：推特、X、长文、小红书、图文、读后感、配图、爆款、内容转化、文案优化。
+instruction_path: SKILL.md

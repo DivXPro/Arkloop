@@ -34,6 +34,14 @@ const defaultShowcases: ShowcaseItem[] = [
     prompt: '/opencli-browser 从淘宝上调研防晒袖的市场情况，分析价格、产品特性和品牌的基本情况',
     category: '电商',
   },
+  {
+    id: 'x-to-xiaohongshu',
+    title: 'X长文转小红书图文',
+    description: '输入推特长文链接，自动提炼观点、生成读后感并配图，一站式转为小红书图文',
+    imageUrl: '/showcase/x-to-xiaohongshu.svg',
+    prompt: '/x-to-xiaohongshu 帮我把这篇推特长文转成小红书图文',
+    category: '内容',
+  },
 ]
 
 export interface ShowcaseDataState {
