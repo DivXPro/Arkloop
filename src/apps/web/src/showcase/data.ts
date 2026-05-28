@@ -7,7 +7,7 @@ const defaultShowcases: ShowcaseItem[] = [
     title: '电商主图生成',
     description: '上传商品图片，AI 自动生成多场景、多风格的专业电商主图',
     imageUrl: '/showcase/ecommerce-main.svg',
-    prompt: '帮我生成电商主图',
+    prompt: '/ecommerce-image-generator 帮我生成电商主图',
     category: '电商',
   },
   {
@@ -15,7 +15,7 @@ const defaultShowcases: ShowcaseItem[] = [
     title: '电商详情页图生成',
     description: '上传商品图片，AI 自动生成完整的电商详情页系列图片',
     imageUrl: '/showcase/ecommerce-detail.svg',
-    prompt: '帮我生成电商详情页图',
+    prompt: '/ecommerce-image-generator 帮我生成电商详情页图',
     category: '电商',
   },
   {
@@ -23,7 +23,7 @@ const defaultShowcases: ShowcaseItem[] = [
     title: 'AI 视觉提示词 Cookbook',
     description: '从 41 种预设风格中挑选，快速生成海报、Logo、社媒图片等专业提示词',
     imageUrl: '/showcase/visual-cookbook.svg',
-    prompt: '帮我设计一张海报',
+    prompt: '/ai-visual-prompt-cookbook 帮我设计一张海报',
     category: '设计',
   },
 ]
