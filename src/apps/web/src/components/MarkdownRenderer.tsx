@@ -269,11 +269,31 @@ const EXT_MIME: Record<string, string> = {
   json: 'application/json', log: 'text/plain', py: 'text/x-python', ts: 'text/typescript',
   tsx: 'text/typescript', js: 'text/javascript', jsx: 'text/javascript', sh: 'text/x-shellscript',
   yml: 'text/yaml', yaml: 'text/yaml', xml: 'application/xml', sql: 'text/plain', go: 'text/plain',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mkv: 'video/x-matroska',
+  avi: 'video/x-msvideo', ogv: 'video/ogg',
 }
 
 function guessMimeType(key: string): string {
   const ext = key.split('.').pop()?.toLowerCase() ?? ''
   return EXT_MIME[ext] ?? 'application/octet-stream'
+}
+
+function isVideoUrl(src: string): boolean {
+  const ext = src.split('.').pop()?.toLowerCase() ?? ''
+  return ['mp4', 'webm', 'mov', 'mkv', 'avi', 'ogv'].includes(ext)
+}
+
+function VideoPlayer({ src, alt }: { src?: string; alt?: string }) {
+  return (
+    <video
+      src={src}
+      controls
+      preload="metadata"
+      style={{ maxWidth: '100%', borderRadius: '8px', margin: '0.5em 0' }}
+    >
+      {alt}
+    </video>
+  )
 }
 
 function buildWorkspaceFileRef(path: string): WorkspaceFileRef {
@@ -418,6 +438,10 @@ function ArtifactAwareImg({ src, alt }: { src?: string; alt?: string }) {
         {alt || '\u56fe\u7247\u52a0\u8f7d\u5931\u8d25'}
       </span>
     )
+  }
+
+  if (src && isVideoUrl(src)) {
+    return <VideoPlayer src={src} alt={alt} />
   }
 
   return <img src={src} alt={alt ?? ''} style={{ maxWidth: '100%', borderRadius: '8px' }} onError={() => setFailed(true)} />

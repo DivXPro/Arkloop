@@ -125,6 +125,21 @@ function PreviewResourceContent({
     )
   }
 
+  if (kind === 'video' && resource.blobUrl) {
+    return (
+      <div data-preview-renderer="video" style={{ width: '100%' }}>
+        <video
+          src={resource.blobUrl}
+          controls
+          preload="metadata"
+          style={{ display: 'block', maxWidth: '100%', borderRadius: 8, border: '0.5px solid var(--c-border-subtle)' }}
+        >
+          {resource.filename}
+        </video>
+      </div>
+    )
+  }
+
   if (kind === 'json' || kind === 'code' || kind === 'text') {
     return (
       <div data-preview-renderer={kind}>
