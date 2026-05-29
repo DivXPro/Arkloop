@@ -27,6 +27,12 @@ const EXT_MIME: Record<string, string> = {
   yaml: 'text/yaml',
   xml: 'application/xml',
   sql: 'text/plain',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  mkv: 'video/x-matroska',
+  avi: 'video/x-msvideo',
+  ogv: 'video/ogg',
 }
 
 const TEXT_FILENAMES = new Set([

@@ -619,7 +619,7 @@ export function registerIpcHandlers(
 
     try {
       const stat = fs.statSync(fullPath)
-      if (stat.size > 5 * 1024 * 1024) return { error: 'too_large' }
+      if (stat.size > 100 * 1024 * 1024) return { error: 'too_large' }
       const data = fs.readFileSync(fullPath)
       return { data: data.toString('base64'), mime_type: guessMimeTypeByExt(relativePath) }
     } catch {
@@ -639,6 +639,8 @@ const MIME_BY_EXT: Record<string, string> = {
   yml: 'text/yaml', yaml: 'text/yaml', xml: 'application/xml', sql: 'text/plain',
   toml: 'text/plain', ini: 'text/plain', conf: 'text/plain', css: 'text/css',
   pdf: 'application/pdf', zip: 'application/zip',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+  mkv: 'video/x-matroska', avi: 'video/x-msvideo', ogv: 'video/ogg',
 }
 
 function guessMimeTypeByExt(filepath: string): string {

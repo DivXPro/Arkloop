@@ -49,6 +49,8 @@ const EXT_MIME: Record<string, string> = {
   log: 'text/plain', py: 'text/x-python', ts: 'text/typescript', tsx: 'text/typescript',
   js: 'text/javascript', jsx: 'text/javascript', sh: 'text/x-shellscript', go: 'text/plain',
   yml: 'text/yaml', yaml: 'text/yaml', xml: 'application/xml', sql: 'text/plain',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+  mkv: 'video/x-matroska', avi: 'video/x-msvideo', ogv: 'video/ogg',
 }
 
 function guessMimeType(path: string): string {
@@ -66,9 +68,10 @@ function isTextMime(mimeType: string): boolean {
   return mimeType === 'application/json' || mimeType === 'application/xml'
 }
 
-function workspaceKind(mimeType: string): 'image' | 'html' | 'text' | 'binary' {
+function workspaceKind(mimeType: string): 'image' | 'video' | 'html' | 'text' | 'binary' {
   if (mimeType === 'text/html' || mimeType === 'image/svg+xml') return 'html'
   if (mimeType.startsWith('image/')) return 'image'
+  if (mimeType.startsWith('video/')) return 'video'
   if (isTextMime(mimeType)) return 'text'
   return 'binary'
 }
@@ -391,6 +394,21 @@ export function WorkspaceResource({ file, runId, projectId, accessToken }: Props
           document.body,
         )}
       </>
+    )
+  }
+
+  if (kind === 'video' && loadState.status === 'binary') {
+    return (
+      <div data-workspace-kind="video" style={{ width: '100%' }}>
+        <video
+          src={loadState.blobUrl}
+          controls
+          preload="metadata"
+          style={{ display: 'block', maxWidth: '100%', borderRadius: '8px', border: '0.5px solid var(--c-border-subtle)' }}
+        >
+          {file.filename}
+        </video>
+      </div>
     )
   }
 
