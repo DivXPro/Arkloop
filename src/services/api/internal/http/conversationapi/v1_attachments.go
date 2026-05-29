@@ -28,7 +28,7 @@ var ErrUnsupportedAttachmentType = errors.New("unsupported attachment type")
 
 // MessageAttachmentOwnerKind 与 thread 附件在对象存储中的 owner 标记一致。
 const MessageAttachmentOwnerKind = "message_attachment"
-const uploadMultipartBodyLimit = (20 << 20) + (1 << 20)
+const uploadMultipartBodyLimit = (50 << 20) + (1 << 20)
 
 const attachmentMetaCreatedAt = "created_at"
 

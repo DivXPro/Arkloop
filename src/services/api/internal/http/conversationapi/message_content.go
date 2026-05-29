@@ -13,8 +13,8 @@ import (
 const (
 	maxUserMessageTextRunes        = 20000
 	maxUserMessageProjectionRunes  = 20000
-	maxMessageAttachmentCount      = 8
-	maxMessageAttachmentTotalBytes = 20 << 20
+	maxMessageAttachmentCount      = 32
+	maxMessageAttachmentTotalBytes = 50 << 20
 	// MaxImageAttachmentBytes 单图上限（与 Worker 多模态装载一致）。
 	MaxImageAttachmentBytes       = 10 << 20
 	maxTextAttachmentBytes        = 1 << 20
