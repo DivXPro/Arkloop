@@ -27,6 +27,7 @@ var supportedImageMIMEs = map[string]struct{}{
 	"image/jpeg": {},
 	"image/webp": {},
 	"image/gif":  {},
+	"image/avif": {},
 }
 
 var supportedTextExtensions = map[string]struct{}{
